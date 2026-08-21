@@ -1,0 +1,257 @@
+# PRIVIA
+
+**Private Personal AI.** A desktop assistant that runs on your machine, reads
+only what you allow, and asks before it does anything with consequences.
+
+PRIVIA can find and summarise your files, take notes, check your calendar, draft
+email, read web pages and run allowlisted commands in your project folders. It
+does all of that locally by default: no account, no sync, no telemetry, and no
+cloud API unless you switch one on yourself.
+
+---
+
+## The one idea
+
+> **The language model proposes. A deterministic runtime disposes.**
+
+The model never touches your filesystem, your mailbox or a shell. It emits a
+structured tool call. A separate runtime validates the arguments against a
+schema, checks the capability against what you have granted, shows you a preview
+if the action has consequences, runs it with a timeout, and records what
+happened. There is no code path from model output to a side effect that skips
+that runtime.
+
+Everything else in this project follows from that.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/privia-app/privia.git
+cd privia
+./scripts/setup.sh          # venv, dependencies, database, .env
+make dev                    # backend on :8756, UI on :5173
+```
+
+Then open <http://127.0.0.1:5173>, go to the **Privacy Center**, and allow one
+folder. Nothing is readable until you do.
+
+Optional, for fluent replies:
+
+```bash
+ollama pull llama3.1:8b && ollama serve
+```
+
+Without a model PRIVIA still runs every tool; it just phrases answers from
+templates instead of generating them. `make doctor` will tell you exactly what
+state your installation is in.
+
+---
+
+## What it does
+
+| Area | What you can ask for | What it will not do |
+|---|---|---|
+| **Files** | find, list, read, summarise, create, rename, move, delete | look outside allowed folders, read `.ssh`/`.env`/keys, delete a folder, delete in bulk |
+| **Notes** | create, search (full-text), read, update, tag, summarise | leave your machine |
+| **Calendar** | list, search, create, update, cancel | create or cancel without showing you the details first |
+| **Email** | search, read, draft, reply | send anything without your explicit approval, every time |
+| **Browser** | search, fetch and read public pages | run scripts, send cookies, reach private or loopback addresses |
+| **Terminal** | run allowlisted commands in your project folders | use a shell, escalate privileges, install packages, touch the network |
+| **Memory** | remember, recall, forget | store credentials, or remember anything you did not ask it to |
+
+---
+
+## How privacy actually works here
+
+**Local by default.** The language model, speech-to-text, embeddings and
+database all run on your machine. The only outbound connection PRIVIA makes on
+its own is when you ask it to read a web page.
+
+**Cloud is opt-in twice.** Enabling it requires both a configuration change and
+granting the `cloud:inference` capability. The status bar says "Cloud enabled"
+whenever it is on, and every reply is labelled with where it was processed.
+
+**No telemetry.** There is no analytics sink in the codebase. The
+`TELEMETRY_ENABLED` flag only affects how long local metrics are kept.
+
+**You can see everything.** Every tool call, permission decision and side effect
+is written to a local audit log *before* the answer is rendered. The Activity
+screen streams it live. `GET /api/v1/privacy/export` gives you every byte PRIVIA
+stores about you as JSON.
+
+**You can delete everything.** Conversations, memories and the audit log are
+each independently erasable from the Privacy Center.
+
+---
+
+## How safety actually works here
+
+Confirmation is separate from permission. Granting `email:send` means you are
+willing to consider sending mail. It never means "send this particular message".
+
+The confirmation dialog shows the exact recipients, subject and body, and
+**the approval is bound to those exact arguments**: the confirmation id is a hash
+of the session, the tool and the arguments. If anything changes between the
+preview and the execution, the hash changes and you are asked again. An approval
+cannot be replayed against different content.
+
+Other properties worth knowing:
+
+- Paths are resolved before they are checked, so `../` and symlinks cannot escape.
+- Commands are parsed into an argument vector and executed with `shell=False`.
+  There is no string a model can produce that becomes a shell command.
+- URLs are resolved to IP addresses and checked before a socket opens, and again
+  on every redirect. `http://localhost` and `http://169.254.169.254` are blocked
+  however they are spelled.
+- Everything a tool returns from outside your machine, file text, page content,
+  email bodies, command output, is wrapped in an explicit "this is data, not
+  instructions" envelope and scored for injection markers before it reaches a
+  prompt.
+- Credentials live in the OS keychain or an AES-GCM encrypted local file. They
+  are never in the database, never in a log, never in an export, and never in a
+  child process's environment.
+
+See [SECURITY.md](SECURITY.md) for the threat model and
+[PRIVACY.md](PRIVACY.md) for the data lifecycle.
+
+---
+
+## Architecture
+
+```
+Desktop UI (React + Tauri)
+        │  HTTP, loopback only
+        ▼
+FastAPI  ──  middleware: request id, size limit, auth, rate limit
+        ▼
+Agent    ──  INPUT → CLASSIFY → PLAN → POLICY_CHECK → TOOL_SELECTION
+                   → EXECUTION → VERIFY → RESPOND
+        ▼
+Tool runtime  ──  schema → permission → confirmation → timeout → retry
+        ▼
+Providers  ──  files · notes · calendar · email · browser · terminal
+        ▼
+Your machine
+```
+
+The repository is a monorepo with hard boundaries:
+
+```
+privia/
+├── apps/
+│   ├── api/            FastAPI application
+│   └── desktop/        React + Tauri client
+├── packages/
+│   ├── shared-types/   every cross-boundary model, defined once
+│   ├── security/       paths, commands, URLs, injection, policy, secrets, audit
+│   ├── storage/        SQLite engine, migrations, repositories
+│   ├── tool-runtime/   registry, middleware chain, execution
+│   ├── agent-core/     the state graph
+│   ├── memory/         layered memory
+│   └── observability/  structured logging, metrics
+├── services/
+│   ├── llm/            provider interface + Ollama, OpenAI, Anthropic, offline
+│   ├── embeddings/     local hashed and Ollama embedders
+│   ├── speech/         VAD, Whisper, TTS
+│   └── integrations/   provider adapters
+├── tests/              unit · integration · security · e2e
+├── docs/               architecture, API, diagrams
+├── scripts/            setup, health checks, packaging, fixtures
+└── infra/              Dockerfile and deployment notes
+```
+
+Full detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Configuration
+
+Every setting is optional. Copy `.env.example` to `.env` and change what you
+need; PRIVIA validates the result at start-up and refuses to run in an unsafe
+configuration rather than silently downgrading.
+
+The settings that matter most:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ALLOWED_DIRECTORIES` | *(empty)* | Absolute paths. Empty means no file is readable. |
+| `LOCAL_LLM_MODEL` | `llama3.1:8b` | Any Ollama model. |
+| `CLOUD_PROCESSING_ENABLED` | `false` | Requires a provider and a key, and still needs the capability. |
+| `PRIVIA_HOST` | `127.0.0.1` | Binding elsewhere requires `PRIVIA_API_TOKEN`; start-up enforces this. |
+| `EMAIL_PROVIDER` | `local` | `local` writes to a local mailbox and transmits nothing. |
+| `STT_PROVIDER` | `faster-whisper` | Optional dependency; degrades to typing. |
+
+---
+
+## Development
+
+```bash
+make install-dev     # dependencies plus dev and optional extras
+make test            # 470 Python tests
+make test-security   # adversarial suite on its own
+make test-ui         # frontend tests
+make lint typecheck  # ruff, black, mypy, eslint, tsc
+make check           # everything CI runs
+make doctor          # diagnose the installation
+```
+
+The test suite runs offline and needs no model. Determinism is deliberate: the
+offline planner is rule-based, so the security tests assert on behaviour rather
+than on a sampled distribution.
+
+Build a native application (needs Rust):
+
+```bash
+npm run tauri icon path/to/privia-1024.png   # once
+./scripts/package_desktop.sh
+```
+
+---
+
+## Documentation
+
+| Document | What is in it |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | components, data flow, agent graph, trust boundaries |
+| [SECURITY.md](SECURITY.md) | threat model, controls, what is explicitly out of scope |
+| [PRIVACY.md](PRIVACY.md) | what is stored, where it goes, how to erase it |
+| [docs/API.md](docs/API.md) | every endpoint, schemas, examples |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | symptoms, causes, fixes |
+| [docs/diagrams/](docs/diagrams/) | eight Mermaid diagrams |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to work on this |
+
+---
+
+## Known limitations
+
+These are real and worth knowing before you rely on the product.
+
+- **Without a local model, replies are templated.** The offline planner is a rule
+  engine. It runs every tool correctly and phrases results from templates, but it
+  does not paraphrase, reason about ambiguity, or hold a general conversation.
+- **Local embeddings are lexical.** The dependency-free embedder is hashed
+  character and word n-grams. It recalls "BA287" perfectly and "racing data" for
+  "F1 analytics" not at all. Install an Ollama embedding model for semantic recall.
+- **Email defaults to a local mailbox.** Drafts and "sent" messages are written
+  to `~/.privia/mail`. Nothing is transmitted until you configure SMTP.
+- **Calendar is local iCalendar files.** They interoperate with any calendar
+  application, but there is no CalDAV or Google Calendar sync.
+- **The browser is a reader.** No JavaScript, no forms, no authenticated pages.
+- **The terminal allowlist is conservative** and will not run something you need.
+  It is a declarative table in `packages/security/privia_security/commands.py`.
+- **Speech needs an optional dependency** (`pip install 'privia[speech]'`) and
+  downloads a model on first use.
+- **Tauri packaging needs Rust** and application icons you supply.
+- **One user per instance.** There is no multi-tenancy and no remote access mode.
+
+---
+
+## Licence
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+PRIVIA is an original project. It is not affiliated with, endorsed by, or
+derived from any other company's software, and contains no third-party
+proprietary code, assets or trademarks.

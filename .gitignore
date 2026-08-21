@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+apps/desktop/dist/
+apps/desktop/dist-ssr/
+apps/desktop/.vite/
+*.tsbuildinfo
+
+# Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Local runtime data - NEVER commit
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+data/
+.privia/
+logs/
+*.log
+
+# Secrets
+*.pem
+*.key
+!**/testdata/**/*.key
+secrets.json
+.secrets/
+
+# OS
+.DS_Store
+Thumbs.db

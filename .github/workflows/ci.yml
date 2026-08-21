@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: the workflow only reads the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  # Tests must never pick up a developer's real configuration.
+  APP_ENV: test
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.10", "3.11", "3.12"]
+        include:
+          - os: macos-latest
+            python: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check --output-format=github .
+
+      - name: Format check (black)
+        run: black --check .
+
+      - name: Type check (mypy)
+        run: mypy packages services apps/api
+
+      - name: Unit tests
+        run: pytest tests/unit -q
+
+      - name: Integration tests
+        run: pytest tests/integration -q
+
+      - name: Security tests
+        run: pytest tests/security -q
+
+      - name: End-to-end tests
+        run: pytest tests/e2e -q
+
+      - name: Coverage
+        if: matrix.python == '3.12' && matrix.os == 'ubuntu-latest'
+        run: pytest tests --cov --cov-report=xml --cov-report=term
+
+      - name: Upload coverage
+        if: matrix.python == '3.12' && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
+
+  frontend:
+    name: Desktop UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-web-build
+          path: apps/desktop/dist
+          retention-days: 7
+
+  security:
+    name: Security analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Static analysis (bandit)
+        run: bandit -c pyproject.toml -r packages services apps/api -f screen
+
+      - name: Dependency audit (pip-audit)
+        run: pip-audit --strict || echo "::warning::pip-audit reported findings"
+
+      - name: Node dependency audit
+        working-directory: apps/desktop
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit --omit=dev --audit-level=high || echo "::warning::npm audit reported findings"
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert no secrets are committed
+        run: |
+          set -e
+          if git ls-files | grep -E '(^|/)\.env$|\.pem$|\.p12$|_rsa$|secrets\.json$'; then
+            echo "::error::A credential-shaped file is tracked in git."
+            exit 1
+          fi
+          echo "No credential-shaped files are tracked."
+
+  offline:
+    name: Works with no network
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Clean install from an empty environment
+        env:
+          HOME: ${{ runner.temp }}/fresh-home
+        run: |
+          mkdir -p "$HOME"
+          python -m privia_storage.cli up
+          python -m privia_api.doctor
+
+      - name: Prove the product works with no model and no network
+        env:
+          HOME: ${{ runner.temp }}/fresh-home
+        run: pytest tests/e2e/test_degradation.py -q
