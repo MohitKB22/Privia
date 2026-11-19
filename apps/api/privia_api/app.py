@@ -20,6 +20,7 @@ from .routers import (
     health,
     integrations,
     memory,
+    models,
     notes,
     permissions,
     privacy,
@@ -86,6 +87,7 @@ def create_app(
     app.include_router(tools.router)
     app.include_router(permissions.router)
     app.include_router(memory.router)
+    app.include_router(models.router)
     app.include_router(notes.router)
     app.include_router(files.router)
     app.include_router(audit.router)

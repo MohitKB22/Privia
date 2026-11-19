@@ -130,6 +130,28 @@ class MemoryService:
         await self._index(record)
         return record
 
+    async def update(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        tags: Sequence[str] | None = None,
+        pinned: bool | None = None,
+    ) -> MemoryRecord:
+        """Edit a memory. New content passes the same checks as a new memory."""
+        fields: dict[str, object] = {}
+        if content is not None:
+            self.check_storable(content)
+            fields["content"] = content.strip()
+        if tags is not None:
+            fields["tags"] = list(tags)
+        if pinned is not None:
+            fields["pinned"] = pinned
+        record = await asyncio.to_thread(lambda: self.memories.update(memory_id, **fields))
+        if content is not None:
+            await self._index(record)
+        return record
+
     async def _index(self, record: MemoryRecord) -> None:
         try:
             vector = await self.embedder.embed_one(record.content)

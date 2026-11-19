@@ -87,6 +87,21 @@ class LLMRouter:
         self._local_health = None
         self._cloud_health = None
 
+    # -- model selection ------------------------------------------------------
+
+    async def installed_local_models(self) -> list[str]:
+        """Models the local runtime has installed. Empty when it is not reachable."""
+        lister = getattr(self.local, "list_models", None)
+        if lister is None:
+            return []
+        models: list[str] = await lister()
+        return sorted(m for m in models if m)
+
+    def set_local_model(self, model: str) -> None:
+        """Switch the local model for every later request."""
+        self.local.model = model
+        self.invalidate_health()
+
     # -- routing --------------------------------------------------------------
 
     async def route(

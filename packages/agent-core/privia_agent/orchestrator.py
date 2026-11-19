@@ -13,8 +13,9 @@ proposed, never whether the permission check runs.
 
 from __future__ import annotations
 
+import asyncio
 import time
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import suppress
 from typing import Any
 
@@ -68,6 +69,9 @@ from .verification import verify
 MAX_PLAN_STEPS = 6
 MAX_INPUT_CHARS = 16_000
 
+#: Receives progress events while a run is in flight (status, tool, token).
+Emitter = Callable[[dict[str, Any]], None]
+
 
 class Agent:
     """Runs one request end to end."""
@@ -98,7 +102,15 @@ class Agent:
         *,
         request_id: str,
         prefer: ProcessingLocation | None = None,
+        emit: Emitter | None = None,
     ) -> AgentRun:
+        """Run one turn.
+
+        ``emit``, when given, receives progress events as they happen, including
+        the reply's tokens as the model produces them. It never changes what the
+        run does, only what an observer can see while it runs.
+        """
+        notify: Emitter = emit or (lambda _event: None)
         run = AgentRun(
             request_id=request_id,
             session_id=ctx.session_id,
@@ -148,6 +160,7 @@ class Agent:
                 context["no_model"] = True
 
             # -- CLASSIFY ---------------------------------------------------
+            notify({"type": "status", "phase": "classify", "message": "Understanding the request"})
             with PhaseTimer(phases, AgentPhase.CLASSIFY) as record:
                 classification = await self._classify(provider, cleaned, context)
                 record.detail = f"{classification.intent} ({classification.confidence})"
@@ -156,6 +169,7 @@ class Agent:
             )
 
             # -- PLAN -------------------------------------------------------
+            notify({"type": "status", "phase": "plan", "message": "Planning"})
             with PhaseTimer(phases, AgentPhase.PLAN) as record:
                 plan = await self._plan(provider, cleaned, classification, context)
                 record.detail = f"{len(plan.steps)} step(s)"
@@ -177,6 +191,14 @@ class Agent:
             pending: ConfirmationRequest | None = None
             executed_calls: list[ToolCall] = []
             if calls:
+                for call in calls:
+                    notify(
+                        {
+                            "type": "tool",
+                            "tool": call.tool_name,
+                            "justification": call.justification,
+                        }
+                    )
                 with PhaseTimer(phases, AgentPhase.EXECUTION) as record:
                     results, executed_calls, pending = await self._execute(calls, ctx)
                     record.detail = f"{len(results)} result(s)"
@@ -210,9 +232,18 @@ class Agent:
                 return run
 
             # -- RESPOND ----------------------------------------------------
+            notify({"type": "status", "phase": "respond", "message": "Writing the reply"})
             with PhaseTimer(phases, AgentPhase.RESPOND):
                 response = await self._respond(
-                    provider, cleaned, classification, results, context, route.degraded
+                    provider,
+                    cleaned,
+                    classification,
+                    results,
+                    context,
+                    route.degraded,
+                    on_token=(
+                        (lambda chunk: notify({"type": "token", "text": chunk})) if emit else None
+                    ),
                 )
 
             # -- VERIFY -----------------------------------------------------
@@ -260,6 +291,12 @@ class Agent:
 
         except PriviaError as exc:
             return self._fail(run, ctx, phases, started, exc.message, str(exc.code))
+        except asyncio.CancelledError:
+            # The user pressed Stop (the client disconnected). Record the run as
+            # stopped so it does not sit in the history as "running" forever,
+            # then let the cancellation propagate.
+            self._fail(run, ctx, phases, started, "Stopped before finishing.", "CANCELLED")
+            raise
         except Exception as exc:
             if self.logger is not None:
                 self.logger.error(
@@ -462,6 +499,7 @@ class Agent:
         results: Sequence[ToolResult],
         context: dict[str, Any],
         degraded: bool,
+        on_token: Callable[[str], None] | None = None,
     ) -> str:
         payload = {
             "intent": str(classification.intent),
@@ -477,7 +515,10 @@ class Agent:
             ],
         }
         if degraded:
-            return compose_response(text, payload)
+            composed = compose_response(text, payload)
+            if on_token:
+                on_token(composed)
+            return composed
 
         untrusted: list[str] = []
         for result in results:
@@ -495,13 +536,20 @@ class Agent:
             messages.insert(1, ChatMessage("system", memories))
         for message in reversed(history_messages(context.get("history", []))[:-1]):
             messages.insert(1, message)
+        options = GenerationOptions(temperature=0.3, max_tokens=1200)
         try:
-            generated = await provider.generate(
-                messages, GenerationOptions(temperature=0.3, max_tokens=1200)
-            )
+            if on_token is None:
+                answer = (await provider.generate(messages, options)).text.strip()
+            else:
+                pieces: list[str] = []
+                async for chunk in provider.stream(messages, options):
+                    pieces.append(chunk)
+                    on_token(chunk)
+                answer = "".join(pieces).strip()
         except (LLMUnavailableError, LLMInvalidOutputError):
+            # The final text in the "done" event replaces anything streamed, so a
+            # failure part-way through still ends with a coherent answer.
             return compose_response(text, payload)
-        answer = generated.text.strip()
         return answer or compose_response(text, payload)
 
     async def stream_response(
@@ -512,31 +560,44 @@ class Agent:
         request_id: str,
         prefer: ProcessingLocation | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Run the graph, emitting progress events then the final answer.
+        """Run the graph, yielding progress events and reply tokens as they happen.
 
-        Tool execution is not streamed token by token: the user needs to see
-        *which* tool is running and be able to stop it, which is a discrete
-        event, not a token stream.
+        The final ``done`` event carries the complete run, including the final
+        response text, which can differ from the streamed tokens if a
+        verification note was appended or the model failed part-way through.
+        Closing the iterator (the user pressed Stop) cancels the run.
         """
-        yield {"type": "status", "phase": "classify", "message": "Understanding the request"}
-        run = await self.run(text, ctx, request_id=request_id, prefer=prefer)
-        for call in run.tool_calls:
-            yield {"type": "tool", "tool": call.tool_name, "justification": call.justification}
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        task = asyncio.create_task(
+            self.run(text, ctx, request_id=request_id, prefer=prefer, emit=queue.put_nowait)
+        )
+        task.add_done_callback(lambda _task: queue.put_nowait(None))
+        try:
+            while (event := await queue.get()) is not None:
+                yield event
+        finally:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+        run = task.result()
         if run.pending_confirmation is not None:
             yield {
                 "type": "confirmation",
                 "confirmation": run.pending_confirmation.model_dump(mode="json"),
             }
-        for chunk in _chunk_text(run.response_text, 64):
-            yield {"type": "token", "text": chunk}
         yield {
             "type": "done",
             "run_id": run.id,
             "status": str(run.status),
+            "intent": str(run.classification.intent),
+            "response": run.response_text,
             "accessed_resources": list(run.accessed_resources),
             "processing_location": str(run.processing_location),
             "model_used": run.model_used,
             "duration_ms": run.duration_ms,
+            "tool_calls": [c.model_dump(mode="json") for c in run.tool_calls],
+            "tool_results": [r.model_dump(mode="json") for r in run.tool_results],
         }
 
     # -----------------------------------------------------------------------
@@ -625,12 +686,6 @@ def _trim_for_prompt(data: Any, limit: int = 4000) -> Any:
     if isinstance(data, list):
         return [_trim_for_prompt(v, limit) for v in data[:20]]
     return data
-
-
-def _chunk_text(text: str, size: int) -> list[str]:
-    if not text:
-        return []
-    return [text[i : i + size] for i in range(0, len(text), size)]
 
 
 class PhaseTimer:

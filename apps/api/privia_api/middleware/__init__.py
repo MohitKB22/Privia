@@ -5,6 +5,7 @@ from __future__ import annotations
 from .core import (
     AuthMiddleware,
     BodySizeLimitMiddleware,
+    LocalAccessGuardMiddleware,
     RateLimitMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
@@ -14,6 +15,7 @@ from .core import (
 __all__ = [
     "AuthMiddleware",
     "BodySizeLimitMiddleware",
+    "LocalAccessGuardMiddleware",
     "RateLimitMiddleware",
     "RequestContextMiddleware",
     "SecurityHeadersMiddleware",

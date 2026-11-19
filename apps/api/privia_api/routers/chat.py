@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -14,11 +14,19 @@ from privia_shared.agent import ChatRequest, ChatResponse
 from privia_shared.enums import Intent, MessageRole, ProcessingLocation, RunStatus
 from privia_shared.errors import ConflictError, NotFoundError, TtsUnavailableError
 from privia_shared.ids import utcnow
+from privia_shared.tools import ToolResult
 
 from ..container import build_tool_context
 from ..deps import ContainerDep, RequestIdDep
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
+
+#: What PRIVIA says when the user declines a confirmation.
+REJECTED_REPLY = "Understood, I have not done it."
+
+
+def _record_rejection(container: ContainerDep, session_id: str) -> None:
+    container.repositories.messages.add(session_id, MessageRole.ASSISTANT, REJECTED_REPLY)
 
 
 def _resolve_confirmation(container: ContainerDep, body: ChatRequest, session_id: str) -> set[str]:
@@ -68,14 +76,12 @@ async def chat(
     if body.confirmation_id and not approved:
         # The user said no. That is a complete answer: nothing runs, and the
         # rejection is already in the audit log.
-        container.repositories.messages.add(
-            session_id, MessageRole.ASSISTANT, "Understood, I have not done it."
-        )
+        _record_rejection(container, session_id)
         return ChatResponse(
             run_id="",
             request_id=request_id,
             session_id=session_id,
-            response="Understood, I have not done it.",
+            response=REJECTED_REPLY,
             status=RunStatus.DENIED,
             intent=Intent.UNKNOWN,
             processing_location=ProcessingLocation.LOCAL,
@@ -107,15 +113,15 @@ async def chat(
         tool_results=run.tool_results,
         pending_confirmation=run.pending_confirmation,
         accessed_resources=run.accessed_resources,
-        permission_prompt=_permission_prompt(run),
+        permission_prompt=_permission_prompt(run.tool_results),
         duration_ms=run.duration_ms,
         audio_base64=audio,
     )
 
 
-def _permission_prompt(run: Any) -> dict[str, Any] | None:
+def _permission_prompt(results: Iterable[ToolResult]) -> dict[str, Any] | None:
     """Surface a missing-permission result as something the UI can act on."""
-    for result in run.tool_results:
+    for result in results:
         if result.success or result.error_code != "TOOL_PERMISSION_DENIED":
             continue
         details = (result.metadata or {}).get("details", {})
@@ -141,14 +147,36 @@ async def chat_stream(
     ctx = build_tool_context(container, session_id, request_id)
     ctx.approved_confirmations = approved
 
+    rejected = bool(body.confirmation_id) and not approved
+
     async def generate() -> AsyncIterator[str]:
         yield _sse({"type": "start", "session_id": session_id, "request_id": request_id})
+        if rejected:
+            # Same contract as /chat: a "no" ends the turn and nothing runs.
+            _record_rejection(container, session_id)
+            yield _sse({"type": "token", "text": REJECTED_REPLY})
+            yield _sse(
+                {
+                    "type": "done",
+                    "run_id": "",
+                    "status": str(RunStatus.DENIED),
+                    "accessed_resources": [],
+                    "processing_location": str(ProcessingLocation.LOCAL),
+                    "model_used": None,
+                    "duration_ms": 0,
+                }
+            )
+            yield "event: end\ndata: {}\n\n"
+            return
         try:
             async for event in container.agent.stream_response(
                 body.message, ctx, request_id=request_id, prefer=body.prefer
             ):
                 if await request.is_disconnected():
                     break
+                if event.get("type") == "done":
+                    results = [ToolResult.model_validate(r) for r in event.get("tool_results", [])]
+                    event = {**event, "permission_prompt": _permission_prompt(results)}
                 yield _sse(event)
         except Exception as exc:
             container.logger.error("chat.stream_failed", error=type(exc).__name__)

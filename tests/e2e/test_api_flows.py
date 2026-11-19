@@ -116,14 +116,16 @@ def test_permissions_persist_across_a_restart(settings, tmp_path) -> None:
     with TestClient(
         create_app(
             settings, container=build_container(settings, offline=True, configure_logs=False)
-        )
+        ),
+        base_url="http://127.0.0.1:8756",
     ) as first:
         grant(first, "notes:read")
 
     with TestClient(
         create_app(
             settings, container=build_container(settings, offline=True, configure_logs=False)
-        )
+        ),
+        base_url="http://127.0.0.1:8756",
     ) as second:
         scopes = {
             s["scope"]: s["state"] for s in second.get("/api/v1/permissions").json()["scopes"]
@@ -411,3 +413,138 @@ def test_metrics_are_local_only(api_client) -> None:
     metrics = api_client.get("/api/v1/metrics").json()
     assert "counters" in metrics
     assert any(key.startswith("http.responses") for key in metrics["counters"])
+
+
+def _sse_events(response) -> list[dict]:
+    return [
+        json.loads(line[6:])
+        for line in response.iter_lines()
+        if line.startswith("data: ") and line[6:].strip() not in ("", "{}")
+    ]
+
+
+def test_rejecting_over_the_stream_sends_nothing(api_client) -> None:
+    grant(api_client, "email:draft")
+    grant(api_client, "email:send")
+    session_id = api_client.post("/api/v1/sessions", json={"title": "t"}).json()["session_id"]
+    api_client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Draft an email to rahul@example.com saying the report is late.",
+            "session_id": session_id,
+        },
+    )
+    paused = api_client.post(
+        "/api/v1/chat", json={"message": "Send the email.", "session_id": session_id}
+    ).json()
+    assert paused["status"] == "awaiting_confirmation"
+
+    with api_client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={
+            "message": "Send the email.",
+            "session_id": session_id,
+            "confirmation_id": paused["pending_confirmation"]["id"],
+            "confirm": False,
+        },
+    ) as response:
+        events = _sse_events(response)
+
+    done = next(e for e in events if e.get("type") == "done")
+    assert done["status"] == "denied"
+    assert not [e for e in events if e.get("type") in ("tool", "status")]
+    drafts = api_client.post(
+        "/api/v1/tools/execute", json={"tool_name": "email.list_drafts", "arguments": {}}
+    ).json()["data"]["drafts"]
+    assert drafts and all(d["status"] == "draft" for d in drafts)
+
+
+def test_stream_done_event_carries_the_full_run(api_client, workspace: Path) -> None:
+    grant(api_client, "files:read", [str(workspace)])
+    with api_client.stream(
+        "POST", "/api/v1/chat/stream", json={"message": "Find the project report"}
+    ) as response:
+        events = _sse_events(response)
+    done = next(e for e in events if e.get("type") == "done")
+    for key in ("response", "tool_calls", "tool_results", "permission_prompt", "intent"):
+        assert key in done, key
+    assert done["tool_results"] and done["tool_results"][0]["success"] is True
+
+
+# ------------------------------------------------------------ memory editing
+
+
+def test_a_memory_can_be_edited_and_pinned(api_client) -> None:
+    created = api_client.post("/api/v1/memory", json={"content": "I prefer tea"}).json()
+    edited = api_client.put(
+        f"/api/v1/memory/{created['id']}", json={"content": "I prefer green tea", "pinned": True}
+    )
+    assert edited.status_code == 200
+    assert edited.json()["content"] == "I prefer green tea"
+    assert edited.json()["pinned"] is True
+    hits = api_client.get("/api/v1/memory", params={"query": "green tea"}).json()["memories"]
+    assert hits and hits[0]["id"] == created["id"]
+
+
+def test_editing_a_memory_cannot_smuggle_in_a_secret(api_client) -> None:
+    created = api_client.post("/api/v1/memory", json={"content": "My favourite city"}).json()
+    response = api_client.put(
+        f"/api/v1/memory/{created['id']}",
+        json={"content": "my api key is sk-live-0123456789abcdefghijklmnopqrstuv"},
+    )
+    assert response.status_code == 422
+    kept = api_client.get("/api/v1/memory").json()["memories"]
+    assert any(m["content"] == "My favourite city" for m in kept)
+
+
+def test_editing_a_missing_memory_is_a_404(api_client) -> None:
+    assert api_client.put("/api/v1/memory/mem_missing", json={"pinned": True}).status_code == 404
+
+
+# ------------------------------------------------------------ model selection
+
+
+def test_models_endpoint_reports_the_local_runtime(api_client) -> None:
+    body = api_client.get("/api/v1/models").json()
+    assert body["local_provider"] == "heuristic"
+    assert body["installed"] == []
+    assert "available" in body["local"]
+
+
+def test_choosing_a_model_needs_ollama(api_client) -> None:
+    response = api_client.put("/api/v1/models/local", json={"model": "llama3.2:3b"})
+    assert response.status_code == 400
+
+
+def test_model_names_are_validated(api_client) -> None:
+    for bad in ("../etc", "a b", "x" * 200, ":tag"):
+        assert api_client.put("/api/v1/models/local", json={"model": bad}).status_code in (400, 422)
+
+
+def test_switching_the_local_model_persists(api_client) -> None:
+    import httpx
+
+    from privia_llm.providers.ollama import OllamaProvider
+
+    def ollama(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/tags"
+        return httpx.Response(200, json={"models": [{"name": "llama3.1:8b"}, {"name": "qwen3:4b"}]})
+
+    container = api_client.container
+    client = httpx.AsyncClient(
+        base_url="http://127.0.0.1:11434", transport=httpx.MockTransport(ollama)
+    )
+    container.router.local = OllamaProvider("llama3.1:8b", client=client)
+    object.__setattr__(container.settings, "local_llm_provider", "ollama")
+
+    assert api_client.get("/api/v1/models").json()["installed"] == ["llama3.1:8b", "qwen3:4b"]
+    missing = api_client.put("/api/v1/models/local", json={"model": "mistral:7b"})
+    assert missing.status_code == 400
+    assert "ollama pull mistral:7b" in missing.json()["error"]["message"]
+
+    chosen = api_client.put("/api/v1/models/local", json={"model": "qwen3:4b"})
+    assert chosen.status_code == 200
+    assert chosen.json()["local"]["model"] == "qwen3:4b"
+    assert chosen.json()["local"]["available"] is True
+    assert container.repositories.settings.all()["local_llm_model"] == "qwen3:4b"

@@ -76,7 +76,8 @@ def test_no_allowed_folders_produces_a_clear_message(settings, tmp_path) -> None
     with TestClient(
         create_app(
             settings, container=build_container(settings, offline=True, configure_logs=False)
-        )
+        ),
+        base_url="http://127.0.0.1:8756",
     ) as client:
         client.post("/api/v1/permissions", json={"scope": "files:read", "grant": True})
         response = client.post("/api/v1/chat", json={"message": "Find my resume"}).json()

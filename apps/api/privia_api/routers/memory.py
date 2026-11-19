@@ -62,6 +62,28 @@ async def remember(
     return record
 
 
+class MemoryEdit(BaseModel):
+    content: str | None = Field(default=None, min_length=2, max_length=2000)
+    tags: list[str] | None = Field(default=None, max_length=10)
+    pinned: bool | None = None
+
+
+@router.put("/{memory_id}", response_model=MemoryRecord, summary="Edit a memory")
+async def edit(
+    memory_id: str, body: MemoryEdit, container: ContainerDep, request_id: RequestIdDep
+) -> MemoryRecord:
+    record = await container.memory.update(
+        memory_id, content=body.content, tags=body.tags, pinned=body.pinned
+    )
+    container.audit.record(
+        AuditAction.MEMORY_WRITTEN,
+        target=record.id,
+        request_id=request_id,
+        detail={"edited": sorted(body.model_dump(exclude_none=True))},
+    )
+    return record
+
+
 @router.delete("/{memory_id}", summary="Forget one memory")
 async def forget(
     memory_id: str, container: ContainerDep, request_id: RequestIdDep

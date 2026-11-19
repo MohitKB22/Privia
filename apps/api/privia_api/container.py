@@ -109,6 +109,10 @@ class Container:
         for key in ("cloud_processing_enabled", "memory_enabled", "telemetry_enabled"):
             if key in overrides:
                 object.__setattr__(self.settings, key, bool(overrides[key]))
+        model = overrides.get("local_llm_model")
+        if isinstance(model, str) and model:
+            object.__setattr__(self.settings, "local_llm_model", model)
+            self.router.set_local_model(model)
         directories = overrides.get("allowed_directories")
         if isinstance(directories, list):
             object.__setattr__(self.settings, "allowed_directories", ",".join(directories))

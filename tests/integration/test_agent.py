@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from privia_agent.orchestrator import Agent
@@ -183,3 +185,50 @@ async def test_denied_scope_produces_a_clear_answer(
     run = await ask(agent, context, "search the web for python news")
     assert run.status is RunStatus.COMPLETED
     assert "denied" in run.response_text.lower() or "permission" in run.response_text.lower()
+
+
+# ------------------------------------------------------------ live streaming
+
+
+class _SlowReplyProvider(HeuristicProvider):
+    """Plans like the offline planner but streams its reply slowly, then stalls."""
+
+    async def stream(self, messages, options=None):  # type: ignore[override]
+        yield "First words"
+        await asyncio.sleep(30)
+        yield " never arrive"
+
+
+async def test_reply_tokens_arrive_before_done_and_match_the_final_text(
+    agent: Agent, context: ToolContext
+) -> None:
+    events = [e async for e in agent.stream_response("hi", context, request_id="req_tokens")]
+    kinds = [e["type"] for e in events]
+    assert "token" in kinds
+    assert kinds.index("token") < kinds.index("done")
+    streamed = "".join(e["text"] for e in events if e["type"] == "token").strip()
+    done = events[-1]
+    assert done["type"] == "done"
+    assert streamed and done["response"].startswith(streamed[:40])
+    assert done["status"] == "completed"
+
+
+async def test_closing_the_stream_stops_the_run_and_records_it(
+    runtime, repositories, settings, permissions, context: ToolContext
+) -> None:
+    router = LLMRouter(settings, permissions, local=_SlowReplyProvider(), cloud=None)
+    memory = MemoryService(
+        repositories.memories, repositories.messages, LocalHashEmbedder(), settings
+    )
+    slow = Agent(router, runtime, repositories, memory)
+
+    stream = slow.stream_response("hi", context, request_id="req_stop")
+    async for event in stream:
+        if event["type"] == "token":
+            break
+    await stream.aclose()  # what the server does when the user presses Stop
+
+    run = repositories.runs.get(context.run_id)
+    assert run is not None
+    assert run.status is RunStatus.FAILED
+    assert run.error_code == "CANCELLED"

@@ -1,7 +1,8 @@
 """Request middleware.
 
-Ordering (outermost first): security headers, request context, body-size limit,
-authentication, rate limit. Authentication comes before rate limiting so an
+Ordering (outermost first): CORS, security headers, request context, local
+access guard (Host and Origin allow-lists), body-size limit, authentication, rate
+limit. Authentication comes before rate limiting so an
 unauthenticated flood cannot consume a legitimate caller's budget.
 """
 
@@ -31,8 +32,10 @@ from ..errors import error_payload
 logger = get_logger("api.http")
 metrics = get_metrics()
 
-#: Endpoints reachable without the local API token.
-PUBLIC_PATHS = frozenset({"/health", "/api/v1/status", "/docs", "/openapi.json", "/redoc"})
+#: Endpoints reachable without the local API token. ``/health`` is what the
+#: desktop shell polls while the backend starts; it reveals nothing personal.
+#: ``/api/v1/status`` is deliberately not here: it exposes paths and model details.
+PUBLIC_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -109,6 +112,59 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def _host_name(header: str) -> str:
+    """The host part of a ``Host`` header, without the port, lower-cased."""
+    value = header.strip().lower()
+    if value.startswith("["):  # IPv6 literal: [::1]:8756
+        end = value.find("]")
+        return value[: end + 1] if end != -1 else value
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+class LocalAccessGuardMiddleware(BaseHTTPMiddleware):
+    """Refuses requests that did not come from PRIVIA's own client.
+
+    Binding to loopback keeps other machines out, but not other *web pages*
+    running in a browser on this machine. Two checks close that gap:
+
+    * **Host allow-list.** A page that rebinds its own domain to 127.0.0.1
+      (DNS rebinding) is same-origin with the API, so CORS does not apply. Its
+      requests still carry ``Host: attacker.example``, which is refused here.
+    * **Origin allow-list.** Browsers attach ``Origin`` to cross-site requests,
+      including ``no-cors`` ones that skip the CORS preflight. Only the desktop
+      shell and the local dev server are accepted. Non-browser clients send no
+      ``Origin`` and are governed by the API token instead.
+    """
+
+    def __init__(self, app: FastAPI, allowed_hosts: tuple[str, ...], origins: tuple[str, ...]):
+        super().__init__(app)
+        self.allowed_hosts = frozenset(allowed_hosts)
+        self.origins = frozenset(origins)
+
+    def _refuse(self, request: Request, message: str, reason: str) -> JSONResponse:
+        logger.warning("access.refused", reason=reason, path=request.url.path)
+        metrics.increment("http.refused", reason=reason)
+        return JSONResponse(
+            status_code=403,
+            content=error_payload(
+                str(ErrorCode.FORBIDDEN), message, getattr(request.state, "request_id", None)
+            ),
+        )
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        host = _host_name(request.headers.get("host", ""))
+        if host not in self.allowed_hosts:
+            return self._refuse(
+                request, "This address is not allowed to reach PRIVIA.", "host_not_allowed"
+            )
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in self.origins:
+            return self._refuse(
+                request, "Requests from this website are not allowed.", "origin_not_allowed"
+            )
+        return await call_next(request)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Bearer-token auth, required only when PRIVIA is not bound to loopback.
 
@@ -175,6 +231,11 @@ def install_middleware(app: FastAPI, settings: Settings, limiter: RateLimiter) -
     app.add_middleware(
         BodySizeLimitMiddleware,  # type: ignore[arg-type]
         max_bytes=settings.max_upload_bytes,
+    )
+    app.add_middleware(
+        LocalAccessGuardMiddleware,  # type: ignore[arg-type]
+        allowed_hosts=settings.allowed_host_list,
+        origins=settings.cors_origin_list,
     )
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)

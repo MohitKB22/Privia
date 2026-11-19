@@ -48,7 +48,14 @@ class Settings(BaseSettings):
     privia_host: str = "127.0.0.1"
     privia_port: int = Field(default=DEFAULT_PORT, ge=1, le=65535)
     privia_data_dir: str = ""
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,tauri://localhost"
+    #: Origins allowed to call the API from a browser context. ``tauri://localhost``
+    #: is the desktop shell on macOS and Linux, ``https://tauri.localhost`` on Windows.
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,tauri://localhost,https://tauri.localhost"
+    )
+    #: Extra ``Host`` header values to accept, comma separated. Loopback names are
+    #: always accepted; anything else is refused to defeat DNS rebinding.
+    privia_allowed_hosts: str = ""
 
     # --- Database ------------------------------------------------------------
     database_url: str = ""
@@ -200,6 +207,15 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> tuple[str, ...]:
         return _split_csv(self.cors_origins)
+
+    @property
+    def allowed_host_list(self) -> tuple[str, ...]:
+        """Host names the API answers to. Everything else is DNS-rebinding bait."""
+        hosts = {"127.0.0.1", "localhost", "::1", "[::1]"}
+        if not self.is_loopback:
+            hosts.add(self.privia_host.lower())
+        hosts.update(h.lower() for h in _split_csv(self.privia_allowed_hosts))
+        return tuple(sorted(hosts))
 
     @property
     def is_loopback(self) -> bool:

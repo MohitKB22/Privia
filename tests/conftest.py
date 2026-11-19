@@ -29,6 +29,9 @@ from privia_tools.tools import build_registry
 
 ALL_SCOPES = tuple(Scope)
 
+#: The address the desktop client uses. The API refuses any other Host header.
+LOCAL_BASE_URL = "http://127.0.0.1:8756"
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
@@ -180,7 +183,7 @@ def api_client(settings: Settings, tmp_path: Path):
 
     built = build_container(settings, offline=True, configure_logs=False)
     app = create_app(settings, container=built)
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL_BASE_URL) as client:
         client.container = built  # type: ignore[attr-defined]
         yield client
 
