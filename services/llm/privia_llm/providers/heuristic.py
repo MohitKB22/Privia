@@ -152,6 +152,11 @@ def compose_response(user_text: str, context: dict[str, Any]) -> str:
     return body or "Done."
 
 
+def _quote(text: str) -> str:
+    """Quote document text so its own Markdown cannot restyle the reply."""
+    return "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
+
+
 def _describe(tool: str, data: Any) -> str:
     if not isinstance(data, dict):
         return f"{_friendly(tool)} finished."
@@ -166,7 +171,7 @@ def _describe(tool: str, data: Any) -> str:
     if tool == "files.read":
         text = data.get("text", "")
         preview = text[:600] + ("..." if len(text) > 600 else "")
-        return f"{data.get('path', 'The file')} contains:\n\n{preview}"
+        return f"{data.get('path', 'The file')} contains:\n\n{_quote(preview)}"
     if tool == "files.summarize":
         return f"Summary of {data.get('path', 'the document')}:\n\n{data.get('summary', '')}"
     if tool == "files.list_directory":

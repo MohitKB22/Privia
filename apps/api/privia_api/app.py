@@ -23,6 +23,7 @@ from .routers import (
     models,
     notes,
     permissions,
+    preferences,
     privacy,
     sessions,
     tools,
@@ -86,6 +87,7 @@ def create_app(
     app.include_router(sessions.router)
     app.include_router(tools.router)
     app.include_router(permissions.router)
+    app.include_router(preferences.router)
     app.include_router(memory.router)
     app.include_router(models.router)
     app.include_router(notes.router)

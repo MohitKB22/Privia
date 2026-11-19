@@ -381,3 +381,30 @@ def test_a_broken_sink_cannot_break_a_request() -> None:
     logger = AuditLogger([Broken(), sink])
     logger.record("tool.invoked")
     assert len(sink.events) == 1
+
+
+def test_extractive_summary_drops_markdown_structure() -> None:
+    from privia_integrations.files.local import summarize_text
+
+    summary = summarize_text("# Q3 Report\n\n- **Revenue** grew 12 percent this quarter overall.\n")
+    assert not summary.startswith("#")
+    assert "**" not in summary and "- " not in summary
+    assert "Revenue grew 12 percent" in summary
+
+
+def test_offline_reply_quotes_file_contents() -> None:
+    from privia_llm.providers.heuristic import compose_response
+
+    reply = compose_response(
+        "read it",
+        {
+            "tool_results": [
+                {
+                    "tool_name": "files.read",
+                    "success": True,
+                    "data": {"path": "/a.md", "text": "# Big\nbody"},
+                }
+            ]
+        },
+    )
+    assert "> # Big" in reply and "> body" in reply

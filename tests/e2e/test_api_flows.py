@@ -548,3 +548,32 @@ def test_switching_the_local_model_persists(api_client) -> None:
     assert chosen.json()["local"]["model"] == "qwen3:4b"
     assert chosen.json()["local"]["available"] is True
     assert container.repositories.settings.all()["local_llm_model"] == "qwen3:4b"
+
+
+# --------------------------------------------------------------- preferences
+
+
+def test_preferences_round_trip(api_client) -> None:
+    assert api_client.get("/api/v1/preferences").json()["onboarding_completed"] is False
+    updated = api_client.put(
+        "/api/v1/preferences",
+        json={
+            "onboarding_completed": True,
+            "display_name": "  Mohit ",
+            "start_screen": "workspace",
+        },
+    ).json()
+    assert updated["onboarding_completed"] is True
+    assert updated["display_name"] == "Mohit"
+    assert api_client.get("/api/v1/preferences").json()["start_screen"] == "workspace"
+
+
+def test_preferences_cannot_touch_security_settings(api_client) -> None:
+    response = api_client.put(
+        "/api/v1/preferences", json={"allowed_directories": ["/"], "onboarding_completed": True}
+    )
+    assert response.status_code == 422
+    assert "allowed_directories" not in api_client.container.repositories.settings.all()
+    assert (
+        api_client.put("/api/v1/preferences", json={"start_screen": "terminal"}).status_code == 422
+    )

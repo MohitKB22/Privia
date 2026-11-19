@@ -455,6 +455,10 @@ def summarize_text(text: str, *, max_sentences: int = 6) -> str:
     """
     import re
 
+    # Markdown structure (headings, bullets, emphasis) is not content. Left in,
+    # a "# Title" line would be shown to the user as a giant heading.
+    text = re.sub(r"(?m)^\s{0,3}(#{1,6}|[-*+]|\d+[.)])\s+", "", text)
+    text = re.sub(r"[*_`]{1,3}", "", text)
     cleaned = re.sub(r"\s+", " ", text).strip()
     if not cleaned:
         return "The document is empty."
