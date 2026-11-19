@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,16 +8,16 @@ version = "1.0.0"
 description = "PRIVIA - Private Personal AI. A local-first, permission-aware desktop assistant."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 authors = [{ name = "PRIVIA Contributors" }]
 keywords = ["local-first", "privacy", "assistant", "agent", "llm"]
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: End Users/Desktop",
-  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Utilities",
 ]
 
@@ -31,6 +31,9 @@ dependencies = [
   "python-multipart>=0.0.9,<1.0",
   "typing-extensions>=4.10",
   "cryptography>=42.0",
+  # The standard-library audioop module was removed in Python 3.13 (PEP 594).
+  # audioop-lts is the maintained drop-in replacement with the same API.
+  "audioop-lts>=0.2.1; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]
@@ -50,9 +53,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/privia-app/privia"
-Documentation = "https://github.com/privia-app/privia/tree/main/docs"
-Issues = "https://github.com/privia-app/privia/issues"
+Homepage = "https://github.com/MohitKB22/Privia"
+Documentation = "https://github.com/MohitKB22/Privia/tree/main/docs"
+Issues = "https://github.com/MohitKB22/Privia/issues"
 
 [project.scripts]
 privia-api = "privia_api.__main__:main"

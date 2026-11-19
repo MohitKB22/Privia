@@ -33,7 +33,7 @@ FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.title="PRIVIA" \
       org.opencontainers.image.description="Private Personal AI - local-first assistant" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/privia-app/privia"
+      org.opencontainers.image.source="https://github.com/MohitKB22/Privia"
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

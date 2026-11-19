@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "PRIVIA - Private Personal AI"
 authors = ["PRIVIA Contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/privia-app/privia"
+repository = "https://github.com/MohitKB22/Privia"
 edition = "2021"
 rust-version = "1.70"
 

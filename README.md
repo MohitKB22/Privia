@@ -28,7 +28,7 @@ Everything else in this project follows from that.
 ## Quick start
 
 ```bash
-git clone https://github.com/privia-app/privia.git
+git clone https://github.com/MohitKB22/Privia.git
 cd privia
 ./scripts/setup.sh          # venv, dependencies, database, .env
 make dev                    # backend on :8756, UI on :5173

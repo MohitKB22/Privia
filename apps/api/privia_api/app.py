@@ -71,7 +71,7 @@ def create_app(
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
-        contact={"name": "PRIVIA", "url": "https://github.com/privia-app/privia"},
+        contact={"name": "PRIVIA", "url": "https://github.com/MohitKB22/Privia"},
         license_info={"name": "Apache-2.0"},
     )
     app.state.container = built

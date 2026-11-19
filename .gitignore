@@ -49,3 +49,7 @@ secrets.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Editor and tool scratch files
+vite.config.ts.timestamp-*
+.coverage.*

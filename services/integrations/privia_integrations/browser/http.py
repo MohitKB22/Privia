@@ -23,7 +23,7 @@ from privia_shared.errors import IntegrationUnavailableError, ToolError, UrlNotA
 from ..base import BrowserProvider
 from .extract import extract_text, strip_tags
 
-USER_AGENT = "PRIVIA/1.0 (local personal assistant; +https://github.com/privia-app/privia)"
+USER_AGENT = "PRIVIA/1.0 (local personal assistant; +https://github.com/MohitKB22/Privia)"
 #: Content types we will read as text.
 READABLE_TYPES = (
     "text/html",
