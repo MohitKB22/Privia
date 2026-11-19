@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window may use core window and event APIs and PRIVIA's own commands. It gets no shell, filesystem, dialog or opener permissions: every privileged action goes through a Rust command that validates its input.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

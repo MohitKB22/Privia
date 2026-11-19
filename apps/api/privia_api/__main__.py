@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import threading
+from typing import Any
 
 from privia_shared.config import get_settings
 from privia_shared.errors import ConfigurationError
@@ -48,13 +51,45 @@ def main(argv: list[str] | None = None) -> int:
             log_level=(args.log_level or settings.log_level).lower(),
         )
     else:
-        uvicorn.run(
-            create_app(settings, offline=args.offline),
-            host=host,
-            port=port,
-            log_level=(args.log_level or settings.log_level).lower(),
+        server = uvicorn.Server(
+            uvicorn.Config(
+                create_app(settings, offline=args.offline),
+                host=host,
+                port=port,
+                log_level=(args.log_level or settings.log_level).lower(),
+            )
         )
+        if os.environ.get("PRIVIA_EXIT_ON_STDIN_EOF") == "1":
+            watch_parent(server)
+        server.run()
     return 0
+
+
+def watch_parent(server: Any) -> threading.Thread:
+    """Shut down when the desktop shell that started us goes away.
+
+    The shell keeps our stdin open for as long as it runs. When it exits, or
+    crashes, the operating system closes the pipe and the read below returns.
+    This works the same on macOS, Linux and Windows, unlike polling a parent
+    process id (on Windows ``os.kill(pid, 0)`` would terminate that process).
+    """
+
+    def wait_for_eof() -> None:
+        stream = sys.stdin.buffer if sys.stdin is not None else None
+        if stream is None:
+            return
+        try:
+            while stream.read(1024):
+                pass
+        except (OSError, ValueError):
+            pass
+        server.should_exit = True
+        # Give uvicorn a moment to finish in-flight requests, then make sure.
+        threading.Timer(5.0, lambda: os._exit(0)).start()
+
+    thread = threading.Thread(target=wait_for_eof, name="privia-parent-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 if __name__ == "__main__":  # pragma: no cover

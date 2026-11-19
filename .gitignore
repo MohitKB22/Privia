@@ -53,3 +53,8 @@ Thumbs.db
 # Editor and tool scratch files
 vite.config.ts.timestamp-*
 .coverage.*
+
+# Generated at build time (see scripts/make_icons.py and packaging/backend)
+apps/desktop/src-tauri/icons/*
+!apps/desktop/src-tauri/icons/README.md
+apps/desktop/src-tauri/binaries/

@@ -174,6 +174,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "N806", "B011"]
 "scripts/**" = ["S"]
+"packaging/**" = ["S"]
 "packages/security/**" = ["S104"]
 
 [tool.ruff.lint.isort]
