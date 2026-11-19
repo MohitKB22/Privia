@@ -6,6 +6,8 @@
  * `CONFIRMATION_REQUIRED` without string matching on messages.
  */
 
+import { getConnection } from './connection';
+import { readEventStream } from './sse';
 import type {
   AuditEvent,
   CalendarEvent,
@@ -13,16 +15,19 @@ import type {
   EmailDraft,
   FileEntry,
   MemoryRecord,
+  ModelsResponse,
   Note,
+  Preferences,
   PrivacyState,
   ScopeInfo,
   StatusResponse,
+  StreamEvent,
   ToolResult,
   ToolSpec,
 } from './types';
 
-const BASE = import.meta.env.VITE_PRIVIA_API ?? '';
-const TOKEN = import.meta.env.VITE_PRIVIA_TOKEN ?? '';
+const OFFLINE_MESSAGE =
+  'PRIVIA cannot reach its backend. If you run from source, start it with `make dev-api`.';
 
 export class ApiRequestError extends Error {
   constructor(
@@ -47,21 +52,47 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (!(init.body instanceof FormData)) headers.set('content-type', 'application/json');
-  if (TOKEN) headers.set('authorization', `Bearer ${TOKEN}`);
+/** True when an error means "PRIVIA has not been allowed to do this yet". */
+export function isPermissionError(error: ApiRequestError | null | undefined): boolean {
+  return Boolean(error && (error.code === 'TOOL_PERMISSION_DENIED' || error.isPermission));
+}
 
-  let response: Response;
-  try {
-    response = await fetch(`${BASE}${path}`, { ...init, headers });
-  } catch {
-    throw new ApiRequestError(
-      'NETWORK_UNREACHABLE',
-      'The PRIVIA backend is not running. Start it with `make dev` or `privia-api`.',
-      0,
-    );
+/** Send a request with the connection's base URL and token. */
+async function send(path: string, init: RequestInit = {}): Promise<Response> {
+  const connection = await getConnection();
+  const headers = new Headers(init.headers);
+  if (init.body !== undefined && !(init.body instanceof FormData)) {
+    headers.set('content-type', 'application/json');
   }
+  if (connection.token) headers.set('authorization', `Bearer ${connection.token}`);
+  try {
+    return await fetch(`${connection.base}${path}`, { ...init, headers });
+  } catch (caught) {
+    if (caught instanceof DOMException && caught.name === 'AbortError') throw caught;
+    throw new ApiRequestError('NETWORK_UNREACHABLE', OFFLINE_MESSAGE, 0);
+  }
+}
+
+async function failure(response: Response): Promise<ApiRequestError> {
+  const text = await response.text();
+  let payload: unknown = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  const envelope = (payload as { error?: Record<string, unknown> } | null)?.error;
+  return new ApiRequestError(
+    String(envelope?.code ?? 'INTERNAL_ERROR'),
+    String(envelope?.message ?? `Request failed with status ${response.status}.`),
+    response.status,
+    (envelope?.details as Record<string, unknown>) ?? {},
+    (envelope?.request_id as string) ?? response.headers.get('x-request-id'),
+  );
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await send(path, init);
 
   if (response.status === 204) return undefined as T;
 
@@ -86,6 +117,32 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     );
   }
   return payload as T;
+}
+
+export interface ChatStreamBody {
+  message: string;
+  session_id?: string | null;
+  confirmation_id?: string | null;
+  confirm?: boolean | null;
+  prefer?: 'local' | 'cloud' | null;
+}
+
+/**
+ * Stream one turn. Resolves when the stream ends. Aborting `signal` closes the
+ * connection; the backend cancels the run and records it as stopped.
+ */
+async function chatStream(
+  body: ChatStreamBody,
+  onEvent: (event: StreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await send('/api/v1/chat/stream', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) throw await failure(response);
+  await readEventStream(response, (data) => onEvent(data as unknown as StreamEvent), signal);
 }
 
 const get = <T>(path: string) => request<T>(path);
@@ -116,6 +173,15 @@ export const api = {
     speak?: boolean;
     prefer?: string | null;
   }) => post<ChatResponse>('/api/v1/chat', body),
+
+  chatStream,
+
+  models: () => get<ModelsResponse>('/api/v1/models'),
+  setLocalModel: (model: string) =>
+    put<{ local: ModelsResponse['local'] }>('/api/v1/models/local', { model }),
+
+  preferences: () => get<Preferences>('/api/v1/preferences'),
+  setPreferences: (patch: Partial<Preferences>) => put<Preferences>('/api/v1/preferences', patch),
 
   sessions: () => get<{ sessions: Record<string, unknown>[] }>('/api/v1/sessions'),
   createSession: (title = 'New conversation') =>
@@ -151,8 +217,10 @@ export const api = {
       `/api/v1/memory?query=${encodeURIComponent(query)}`,
     ),
   memoryStats: () => get<Record<string, unknown>>('/api/v1/memory/stats'),
-  remember: (content: string, kind = 'fact') =>
-    post<MemoryRecord>('/api/v1/memory', { content, kind }),
+  remember: (content: string, kind = 'fact', pinned = false) =>
+    post<MemoryRecord>('/api/v1/memory', { content, kind, pinned }),
+  updateMemory: (id: string, patch: { content?: string; pinned?: boolean; tags?: string[] }) =>
+    put<MemoryRecord>(`/api/v1/memory/${id}`, patch),
   forget: (id: string) => del<{ deleted: string }>(`/api/v1/memory/${id}`),
   forgetAll: (keepPinned: boolean) =>
     post<{ deleted: number }>(`/api/v1/memory/clear?keep_pinned=${keepPinned}`),
@@ -214,6 +282,8 @@ export const api = {
   deleteSecret: (key: string) => del<{ deleted: string }>(`/api/v1/integrations/secrets/${key}`),
 
   voiceStatus: () => get<Record<string, unknown>>('/api/v1/voice/status'),
+  synthesize: (text: string) =>
+    post<{ audio_base64: string; format: string }>('/api/v1/voice/synthesize', { text }),
   transcribe: async (blob: Blob) => {
     const form = new FormData();
     form.append('audio', blob, 'speech.wav');
@@ -251,16 +321,24 @@ export const api = {
 
 type IntegrationInfoList = import('./types').IntegrationInfo[];
 
-/** Subscribe to the live audit stream. Returns an unsubscribe function. */
+/**
+ * Subscribe to the live audit stream. Returns an unsubscribe function.
+ * Uses fetch rather than EventSource so the API token can be sent.
+ */
 export function subscribeToActivity(onEvent: (event: AuditEvent) => void): () => void {
-  const source = new EventSource(`${BASE}/api/v1/audit/stream`);
-  source.onmessage = (message) => {
+  const controller = new AbortController();
+  void (async () => {
     try {
-      onEvent(JSON.parse(message.data) as AuditEvent);
+      const response = await send('/api/v1/audit/stream', { signal: controller.signal });
+      if (!response.ok) return;
+      await readEventStream(
+        response,
+        (data) => onEvent(data as unknown as AuditEvent),
+        controller.signal,
+      );
     } catch {
-      /* a malformed frame must not break the feed */
+      /* the feed is best effort; the Activity screen also loads history */
     }
-  };
-  source.onerror = () => source.close();
-  return () => source.close();
+  })();
+  return () => controller.abort();
 }

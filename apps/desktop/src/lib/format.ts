@@ -51,14 +51,25 @@ export function formatTime(iso: string | null | undefined): string {
 /** Shorten a long path so both ends stay readable. */
 export function shortenPath(path: string, max = 52): string {
   if (path.length <= max) return path;
-  const parts = path.split('/');
+  const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/';
+  const parts = path.split(/[\\/]/);
   const file = parts.pop() ?? '';
-  const head = parts.slice(0, 2).join('/');
-  return `${head}/…/${file}`.slice(0, max + 8);
+  const head = parts.slice(0, 2).join(separator);
+  return `${head}${separator}…${separator}${file}`.slice(0, max + 8);
 }
 
+/** The last path component, for POSIX and Windows paths alike. */
 export function basename(path: string): string {
-  return path.split('/').filter(Boolean).pop() ?? path;
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** "Good morning" style greeting for the local time of day. */
+export function greeting(date = new Date()): string {
+  const hour = date.getHours();
+  if (hour < 5) return 'Good evening';
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
 export function titleCase(value: string): string {
@@ -74,7 +85,7 @@ export const RISK_STYLES: Record<string, string> = {
 };
 
 export const OUTCOME_STYLES: Record<string, string> = {
-  success: 'text-accent',
+  success: 'text-ok',
   failure: 'text-danger',
   denied: 'text-caution',
   pending: 'text-graphite-400',

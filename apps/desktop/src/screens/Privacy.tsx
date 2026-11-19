@@ -61,11 +61,10 @@ export function Privacy() {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
+    <div className="h-full overflow-y-auto px-8 py-7">
       <div className="mx-auto max-w-3xl space-y-4">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-graphite-100">Privacy Center</h1>
-          <p className="mt-1 text-sm text-graphite-500">
+          <p className="max-w-2xl text-sm text-graphite-400">
             Where your data is processed, what PRIVIA may touch, and how to erase it.
           </p>
         </header>
@@ -74,12 +73,12 @@ export function Privacy() {
           className={`panel flex items-center gap-3 p-4 ${
             data.data_leaving_device
               ? 'border-caution/40 bg-caution-soft'
-              : 'border-accent/30 bg-accent-soft'
+              : 'border-ok/25 bg-ok-soft'
           }`}
         >
           <Icon
             name={data.data_leaving_device ? 'cloud' : 'lock'}
-            className={`h-5 w-5 ${data.data_leaving_device ? 'text-caution' : 'text-accent'}`}
+            className={`h-5 w-5 ${data.data_leaving_device ? 'text-caution' : 'text-ok'}`}
           />
           <div>
             <p className="text-sm font-medium text-graphite-100">
@@ -109,7 +108,7 @@ export function Privacy() {
                     : 'No local model installed; the offline planner is handling requests.'}
                 </p>
               </div>
-              <Chip tone="accent">
+              <Chip tone="ok">
                 <Dot tone="ok" /> always on
               </Chip>
             </div>
@@ -122,7 +121,7 @@ export function Privacy() {
               description={
                 data.cloud_provider
                   ? `Send requests to ${data.cloud_provider} when you ask for it or when no local model is available.`
-                  : 'No cloud provider is configured. Set one in Settings first.'
+                  : 'No cloud provider is configured. Set CLOUD_LLM_PROVIDER in your configuration and store the API key under Integrations.'
               }
               onChange={(next) => {
                 if (next) setConfirmCloud(true);
@@ -183,7 +182,7 @@ export function Privacy() {
                   PRIVIA has no telemetry sink. There is nothing to send and nowhere to send it.
                 </p>
               </div>
-              <Chip tone="accent">never</Chip>
+              <Chip tone="ok">never</Chip>
             </div>
           </div>
         </Section>
@@ -317,7 +316,7 @@ export function Privacy() {
                     }}
                     className={`chip shrink-0 ${
                       scope.state === 'granted'
-                        ? 'border-accent/40 bg-accent-soft text-accent'
+                        ? 'border-ok/30 bg-ok-soft text-ok'
                         : scope.state === 'denied'
                           ? 'border-danger/40 bg-danger-soft text-danger'
                           : 'border-graphite-700 text-graphite-500'

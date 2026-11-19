@@ -248,4 +248,60 @@ export type ChatMessage = {
   durationMs?: number;
   pending?: boolean;
   failed?: boolean;
+  /** Tokens are still arriving. */
+  streaming?: boolean;
+  /** The user pressed Stop before the reply finished. */
+  stopped?: boolean;
+  /** What the assistant is doing right now, while streaming. */
+  activity?: string;
+  /** The user message this reply answers, for Regenerate. */
+  prompt?: string;
 };
+
+export interface ModelsResponse {
+  local_provider: 'ollama' | 'heuristic';
+  ollama_url: string;
+  local: ModelInfo;
+  installed: string[];
+  cloud: ModelInfo | null;
+  cloud_enabled: boolean;
+}
+
+export interface Preferences {
+  onboarding_completed: boolean;
+  display_name: string;
+  start_screen: 'home' | 'workspace';
+  sidebar_collapsed: boolean;
+  reduce_motion: boolean;
+}
+
+export interface Session {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count?: number;
+}
+
+/** Events from `/api/v1/chat/stream`. */
+export type StreamEvent =
+  | { type: 'start'; session_id: string; request_id: string }
+  | { type: 'status'; phase: string; message: string }
+  | { type: 'tool'; tool: string; justification: string }
+  | { type: 'token'; text: string }
+  | { type: 'confirmation'; confirmation: ConfirmationRequest }
+  | { type: 'error'; code: string; message: string }
+  | {
+      type: 'done';
+      run_id: string;
+      status: RunStatus;
+      intent: string;
+      response: string;
+      accessed_resources: string[];
+      processing_location: ProcessingLocation;
+      model_used: string | null;
+      duration_ms: number;
+      tool_calls: ToolCall[];
+      tool_results: ToolResult[];
+      permission_prompt: PermissionPrompt | null;
+    };

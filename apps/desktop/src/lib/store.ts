@@ -48,17 +48,34 @@ export function createStore<T extends object>(initial: T) {
 
 export type Screen =
   | 'home'
-  | 'conversation'
-  | 'activity'
+  | 'workspace'
   | 'files'
-  | 'calendar'
-  | 'email'
-  | 'browser'
-  | 'terminal'
-  | 'notes'
   | 'memory'
+  | 'notes'
+  | 'planner'
+  | 'email'
+  | 'integrations'
+  | 'activity'
   | 'privacy'
-  | 'settings';
+  | 'settings'
+  | 'browser'
+  | 'terminal';
+
+export const SCREEN_TITLES: Record<Screen, string> = {
+  home: 'Home',
+  workspace: 'AI Workspace',
+  files: 'My Files',
+  memory: 'Memory',
+  notes: 'Notes',
+  planner: 'Planner',
+  email: 'Email',
+  integrations: 'Integrations',
+  activity: 'Activity',
+  privacy: 'Privacy Center',
+  settings: 'Settings',
+  browser: 'Web reader',
+  terminal: 'Terminal',
+};
 
 export interface Toast {
   id: string;
@@ -67,12 +84,24 @@ export interface Toast {
   detail?: string;
 }
 
+/** A message handed to the AI Workspace from elsewhere (Home, Files, Notes...). */
+export interface PendingPrompt {
+  text: string;
+  send: boolean;
+  nonce: number;
+}
+
 export interface AppState {
   screen: Screen;
   sessionId: string | null;
   paletteOpen: boolean;
   toasts: Toast[];
   backendOnline: boolean;
+  sidebarCollapsed: boolean;
+  micActive: boolean;
+  pendingPrompt: PendingPrompt | null;
+  /** Bumped whenever a conversation changes, so lists can refresh. */
+  sessionsVersion: number;
 }
 
 export const appStore = createStore<AppState>({
@@ -81,9 +110,26 @@ export const appStore = createStore<AppState>({
   paletteOpen: false,
   toasts: [],
   backendOnline: true,
+  sidebarCollapsed: false,
+  micActive: false,
+  pendingPrompt: null,
+  sessionsVersion: 0,
 });
 
 export const navigate = (screen: Screen) => appStore.setState({ screen, paletteOpen: false });
+
+/** Open the AI Workspace with `text` in the composer, optionally sending it. */
+export function askPrivia(
+  text: string,
+  options: { send?: boolean; newConversation?: boolean } = {},
+) {
+  appStore.setState((state) => ({
+    screen: 'workspace',
+    paletteOpen: false,
+    sessionId: options.newConversation ? null : state.sessionId,
+    pendingPrompt: { text, send: options.send ?? true, nonce: Date.now() },
+  }));
+}
 
 export function pushToast(toast: Omit<Toast, 'id'>) {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

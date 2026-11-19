@@ -3,7 +3,7 @@ import { Icon } from './primitives';
 
 const TONES = {
   info: 'border-graphite-700 bg-graphite-850 text-graphite-200',
-  success: 'border-accent/40 bg-accent-soft text-graphite-100',
+  success: 'border-ok/30 bg-graphite-800 text-graphite-100',
   warning: 'border-caution/40 bg-caution-soft text-graphite-100',
   error: 'border-danger/40 bg-danger-soft text-graphite-100',
 } as const;

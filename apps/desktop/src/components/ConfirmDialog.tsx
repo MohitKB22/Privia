@@ -68,7 +68,9 @@ export function ConfirmDialog({ request, busy = false, onApprove, onReject }: Pr
         <header className="flex items-start gap-3 border-b border-graphite-800 px-5 py-4">
           <span
             className={`mt-0.5 rounded-lg p-1.5 ${
-              request.destructive ? 'bg-danger-soft text-danger' : 'bg-accent-soft text-accent'
+              request.destructive
+                ? 'bg-danger-soft text-danger'
+                : 'bg-graphite-800 text-graphite-200'
             }`}
           >
             <Icon name={request.destructive ? 'alert' : 'shield'} />

@@ -5,14 +5,22 @@ import type { AuditEvent } from '@/lib/types';
 import { OUTCOME_STYLES, formatRelative, shortenPath } from '@/lib/format';
 import { Chip, EmptyState, ErrorState, Icon, SkeletonList } from '@/components/primitives';
 
+/** A filter is an action prefix, or "!" for anything that failed or was refused. */
 const FILTERS = [
   { label: 'Everything', value: '' },
   { label: 'Tools', value: 'tool.' },
+  { label: 'Approvals', value: 'confirmation.' },
   { label: 'Permissions', value: 'permission.' },
-  { label: 'Confirmations', value: 'confirmation.' },
+  { label: 'Failed and denied', value: '!' },
   { label: 'Files', value: 'file.' },
   { label: 'Security', value: 'security.' },
 ];
+
+/** Render one audit detail value compactly. Objects become JSON, not "[object Object]". */
+function detailValue(value: unknown): string {
+  const text = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+}
 
 export function Activity() {
   const { data, error, loading, reload } = useAsync(() => api.audit({ limit: 200 }), []);
@@ -35,16 +43,18 @@ export function Activity() {
       seen.add(event.id);
       return true;
     });
+    if (filter === '!') {
+      return unique.filter((event) => event.outcome === 'failure' || event.outcome === 'denied');
+    }
     return filter ? unique.filter((event) => event.action.startsWith(filter)) : unique;
   }, [data, live, filter]);
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
+    <div className="h-full overflow-y-auto px-8 py-7">
       <div className="mx-auto max-w-4xl space-y-4">
         <header className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-graphite-100">Activity</h1>
-            <p className="mt-1 text-sm text-graphite-500">
+            <p className="max-w-2xl text-sm text-graphite-400">
               Every tool call, permission decision and side effect, in order. This is the record
               PRIVIA writes before it answers you.
             </p>
@@ -53,7 +63,7 @@ export function Activity() {
             <button
               type="button"
               onClick={() => setStreaming((value) => !value)}
-              className={streaming ? 'btn-ghost border-accent/40 text-accent' : 'btn-ghost'}
+              className={streaming ? 'btn-ghost border-brand-line text-graphite-100' : 'btn-ghost'}
             >
               <Icon name="activity" className="h-3.5 w-3.5" />
               {streaming ? 'Live' : 'Paused'}
@@ -72,7 +82,7 @@ export function Activity() {
               onClick={() => setFilter(option.value)}
               className={`chip ${
                 filter === option.value
-                  ? 'border-accent/40 bg-accent-soft text-accent'
+                  ? 'border-ok/30 bg-ok-soft text-ok'
                   : 'border-graphite-700 text-graphite-400 hover:text-graphite-200'
               }`}
             >
@@ -116,7 +126,7 @@ export function Activity() {
                     <p className="mt-0.5 truncate text-2xs text-graphite-600">
                       {Object.entries(event.detail)
                         .slice(0, 4)
-                        .map(([key, value]) => `${key}=${String(value).slice(0, 40)}`)
+                        .map(([key, value]) => `${key}=${detailValue(value)}`)
                         .join('  ')}
                     </p>
                   ) : null}

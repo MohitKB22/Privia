@@ -16,19 +16,24 @@
   body {
     margin: 0;
     background: theme('colors.graphite.950');
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    color: theme('colors.graphite.100');
+    font-size: 14px;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Visible focus for keyboard users, invisible for pointer users. */
+  /* Visible focus for keyboard users, nothing for pointer users. */
   :focus-visible {
-    outline: 2px solid theme('colors.accent.DEFAULT');
+    outline: 2px solid theme('colors.brand.DEFAULT');
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   ::selection {
-    background: theme('colors.accent.line');
+    background: theme('colors.brand.line');
+    color: theme('colors.graphite.100');
   }
 
   ::-webkit-scrollbar {
@@ -39,13 +44,13 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: theme('colors.graphite.700');
+    background: theme('colors.graphite.750');
     border-radius: 999px;
     border: 3px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.graphite.600');
+    background: theme('colors.graphite.700');
     background-clip: content-box;
   }
 
@@ -58,37 +63,56 @@
       transition-duration: 0.01ms !important;
     }
   }
+
+  /* The same, when the user asks for it in Settings. */
+  .reduce-motion *,
+  .reduce-motion *::before,
+  .reduce-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer components {
+  /* Surfaces */
   .panel {
-    @apply rounded-xl border border-graphite-800 bg-graphite-900/70 shadow-panel backdrop-blur-sm;
+    @apply rounded-xl border border-graphite-700/70 bg-graphite-850 shadow-panel;
   }
-
   .panel-flat {
-    @apply rounded-xl border border-graphite-800 bg-graphite-900;
+    @apply rounded-xl border border-graphite-700/70 bg-graphite-850;
+  }
+  .panel-raised {
+    @apply rounded-xl border border-graphite-700 bg-graphite-800 shadow-lift;
   }
 
+  /* Buttons */
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium
            transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn bg-accent/90 text-graphite-950 hover:bg-accent;
+    @apply btn bg-brand text-graphite-100 hover:bg-brand-hover;
   }
   .btn-ghost {
     @apply btn border border-graphite-700 text-graphite-200 hover:border-graphite-600 hover:bg-graphite-800;
   }
   .btn-danger {
-    @apply btn border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20;
+    @apply btn border border-danger/40 text-danger hover:bg-danger-soft;
   }
   .btn-quiet {
     @apply btn text-graphite-400 hover:bg-graphite-800 hover:text-graphite-100;
   }
+  .btn-icon {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg text-graphite-400 transition-colors
+           hover:bg-graphite-800 hover:text-graphite-100 disabled:cursor-not-allowed disabled:opacity-40;
+  }
 
+  /* Inputs */
   .field {
-    @apply w-full rounded-lg border border-graphite-700 bg-graphite-850 px-3 py-2 text-sm
-           text-graphite-100 placeholder:text-graphite-500 focus:border-accent/50 focus:outline-none;
+    @apply w-full rounded-lg border border-graphite-700 bg-graphite-900 px-3 py-2 text-sm
+           text-graphite-100 placeholder:text-graphite-500 transition-colors
+           focus:border-brand-line focus:outline-none;
   }
 
   .chip {
@@ -96,7 +120,12 @@
   }
 
   .label {
-    @apply text-2xs font-semibold uppercase tracking-wider text-graphite-500;
+    @apply text-2xs font-medium uppercase tracking-[0.08em] text-graphite-500;
+  }
+
+  .kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded border border-graphite-700
+           bg-graphite-850 px-1 font-sans text-2xs text-graphite-400;
   }
 
   .skeleton {
@@ -105,17 +134,59 @@
   .skeleton::after {
     content: '';
     @apply absolute inset-0 -translate-x-full animate-shimmer
-           bg-gradient-to-r from-transparent via-graphite-700/40 to-transparent;
+           bg-gradient-to-r from-transparent via-graphite-700/30 to-transparent;
   }
 
+  /* Rendered Markdown in assistant replies */
   .prose-privia {
-    @apply text-[0.9375rem] leading-relaxed text-graphite-200;
+    @apply text-[0.9rem] leading-[1.65] text-graphite-200;
   }
-  .prose-privia pre {
-    @apply my-2 overflow-x-auto rounded-lg border border-graphite-800 bg-graphite-950 p-3
-           font-mono text-xs text-graphite-300;
+  .prose-privia > * + * {
+    @apply mt-3;
   }
-  .prose-privia code {
-    @apply rounded bg-graphite-800 px-1 py-0.5 font-mono text-[0.85em] text-accent;
+  .prose-privia h1,
+  .prose-privia h2,
+  .prose-privia h3 {
+    @apply font-semibold text-graphite-100;
+  }
+  .prose-privia h1 {
+    @apply text-lg;
+  }
+  .prose-privia h2 {
+    @apply text-base;
+  }
+  .prose-privia h3 {
+    @apply text-sm;
+  }
+  .prose-privia ul {
+    @apply list-disc space-y-1 pl-5 marker:text-graphite-600;
+  }
+  .prose-privia ol {
+    @apply list-decimal space-y-1 pl-5 marker:text-graphite-500;
+  }
+  .prose-privia a {
+    @apply text-graphite-100 underline decoration-brand-line underline-offset-2 hover:decoration-brand;
+  }
+  .prose-privia strong {
+    @apply font-semibold text-graphite-100;
+  }
+  .prose-privia blockquote {
+    @apply border-l-2 border-graphite-700 pl-3 text-graphite-400;
+  }
+  .prose-privia :not(pre) > code {
+    @apply rounded bg-graphite-800 px-1 py-0.5 font-mono text-[0.84em] text-graphite-100;
+  }
+  .prose-privia table {
+    @apply w-full border-collapse text-sm;
+  }
+  .prose-privia th,
+  .prose-privia td {
+    @apply border border-graphite-700 px-2.5 py-1.5 text-left;
+  }
+  .prose-privia th {
+    @apply bg-graphite-800 font-medium text-graphite-100;
+  }
+  .prose-privia hr {
+    @apply border-graphite-700;
   }
 }

@@ -45,7 +45,7 @@ export function PermissionPrompt({ prompt, busy, onAllow, onDeny }: Props) {
     <div className="panel animate-fade-in p-4">
       <div className="flex items-start gap-3">
         <span
-          className={`mt-0.5 rounded-lg p-1.5 ${cloud ? 'bg-caution-soft text-caution' : 'bg-accent-soft text-accent'}`}
+          className={`mt-0.5 rounded-lg p-1.5 ${cloud ? 'bg-caution-soft text-caution' : 'bg-graphite-800 text-graphite-200'}`}
         >
           <Icon name={cloud ? 'cloud' : 'lock'} />
         </span>

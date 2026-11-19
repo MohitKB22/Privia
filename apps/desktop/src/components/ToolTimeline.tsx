@@ -37,9 +37,7 @@ export function ToolTimeline({ calls, results, accessed = [], compact = false }:
                 className="flex w-full items-center gap-2.5 rounded-lg border border-graphite-800 bg-graphite-950/50 px-2.5 py-1.5 text-left transition-colors hover:border-graphite-700"
               >
                 <span className="font-mono text-2xs text-graphite-600">{index + 1}</span>
-                <span
-                  className={failed ? 'text-danger' : result ? 'text-accent' : 'text-graphite-500'}
-                >
+                <span className={failed ? 'text-danger' : result ? 'text-ok' : 'text-graphite-500'}>
                   <Icon
                     name={failed ? 'x' : result ? 'check' : 'refresh'}
                     className="h-3.5 w-3.5"

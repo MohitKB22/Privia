@@ -1,7 +1,13 @@
-/** Fuzzy command palette. Everything reachable from the keyboard. */
+/**
+ * Global search and command palette. Screens, actions, and content: your
+ * conversations, notes and memories. Everything reachable from the keyboard.
+ */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { appStore, navigate, type Screen } from '@/lib/store';
+import { api } from '@/lib/api';
+import { appStore, askPrivia, navigate, SCREEN_TITLES, type Screen } from '@/lib/store';
+import { useDebounced } from '@/hooks/useDebounced';
+import type { Session } from '@/lib/types';
 import { Icon, type IconName } from './primitives';
 import { MOD_LABEL } from '@/hooks/useHotkeys';
 
@@ -14,29 +20,20 @@ interface Command {
   run: () => void;
 }
 
-const SCREENS: { screen: Screen; label: string; icon: IconName; keywords: string }[] = [
-  { screen: 'home', label: 'Home', icon: 'home', keywords: 'start overview dashboard' },
-  { screen: 'conversation', label: 'Conversation', icon: 'chat', keywords: 'chat talk ask' },
-  { screen: 'activity', label: 'Activity', icon: 'activity', keywords: 'audit history log runs' },
-  { screen: 'files', label: 'Files', icon: 'files', keywords: 'documents folders browse' },
-  { screen: 'calendar', label: 'Calendar', icon: 'calendar', keywords: 'events meetings schedule' },
-  { screen: 'email', label: 'Email', icon: 'mail', keywords: 'mail drafts inbox' },
-  { screen: 'browser', label: 'Browser', icon: 'globe', keywords: 'web page url search' },
-  { screen: 'terminal', label: 'Terminal', icon: 'terminal', keywords: 'shell command run' },
-  { screen: 'notes', label: 'Notes', icon: 'note', keywords: 'notes write jot' },
-  { screen: 'memory', label: 'Memory', icon: 'brain', keywords: 'remember facts recall' },
-  {
-    screen: 'privacy',
-    label: 'Privacy Center',
-    icon: 'shield',
-    keywords: 'privacy permissions cloud data',
-  },
-  {
-    screen: 'settings',
-    label: 'Settings',
-    icon: 'settings',
-    keywords: 'configuration model preferences',
-  },
+const SCREENS: { screen: Screen; icon: IconName; keywords: string }[] = [
+  { screen: 'home', icon: 'home', keywords: 'start overview dashboard' },
+  { screen: 'workspace', icon: 'workspace', keywords: 'chat conversation talk ask assistant' },
+  { screen: 'files', icon: 'files', keywords: 'documents folders browse' },
+  { screen: 'memory', icon: 'brain', keywords: 'remember facts recall' },
+  { screen: 'notes', icon: 'note', keywords: 'notes write jot' },
+  { screen: 'planner', icon: 'calendar', keywords: 'calendar events meetings schedule day week' },
+  { screen: 'email', icon: 'mail', keywords: 'mail drafts inbox send' },
+  { screen: 'integrations', icon: 'plug', keywords: 'connections credentials keys accounts' },
+  { screen: 'activity', icon: 'activity', keywords: 'audit history log runs approvals' },
+  { screen: 'privacy', icon: 'shield', keywords: 'privacy permissions cloud data delete export' },
+  { screen: 'settings', icon: 'settings', keywords: 'configuration model ollama preferences' },
+  { screen: 'browser', icon: 'globe', keywords: 'web page url search reader' },
+  { screen: 'terminal', icon: 'terminal', keywords: 'shell command run' },
 ];
 
 function score(query: string, command: Command): number {
@@ -66,7 +63,7 @@ export function CommandPalette() {
     () => [
       ...SCREENS.map((entry) => ({
         id: `go:${entry.screen}`,
-        label: entry.label,
+        label: SCREEN_TITLES[entry.screen],
         hint: 'Go to',
         icon: entry.icon,
         keywords: entry.keywords,
@@ -79,7 +76,7 @@ export function CommandPalette() {
         icon: 'plus',
         keywords: 'reset clear start fresh',
         run: () => {
-          appStore.setState({ sessionId: null, screen: 'conversation', paletteOpen: false });
+          appStore.setState({ sessionId: null, screen: 'workspace', paletteOpen: false });
         },
       },
       {
@@ -94,16 +91,26 @@ export function CommandPalette() {
     [],
   );
 
-  const matches = useMemo(
-    () =>
-      commands
-        .map((command) => ({ command, value: score(query, command) }))
-        .filter((entry) => entry.value > 0)
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 9)
-        .map((entry) => entry.command),
-    [commands, query],
-  );
+  const content = useContentSearch(open ? query : '');
+
+  const matches = useMemo(() => {
+    const ranked = commands
+      .map((command) => ({ command, value: score(query, command) }))
+      .filter((entry) => entry.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, query.trim() ? 5 : 9)
+      .map((entry) => entry.command);
+    if (!query.trim()) return ranked;
+    const ask: Command = {
+      id: 'action:ask',
+      label: `Ask PRIVIA: “${query.trim()}”`,
+      hint: 'AI Workspace',
+      icon: 'workspace',
+      keywords: '',
+      run: () => askPrivia(query.trim(), { newConversation: true }),
+    };
+    return [ask, ...ranked, ...content];
+  }, [commands, content, query]);
 
   useEffect(() => {
     if (open) {
@@ -153,7 +160,7 @@ export function CommandPalette() {
                 matches[cursor]?.run();
               }
             }}
-            placeholder="Search screens and actions…"
+            placeholder="Search conversations, notes, memories, or jump to…"
             aria-label="Search commands"
             className="w-full bg-transparent text-sm text-graphite-100 placeholder:text-graphite-600 focus:outline-none"
           />
@@ -199,4 +206,74 @@ export function CommandPalette() {
       </div>
     </div>
   );
+}
+
+/** Search the user's own content once they pause typing. */
+function useContentSearch(query: string): Command[] {
+  const debounced = useDebounced(query.trim(), 250);
+  const [results, setResults] = useState<Command[]>([]);
+
+  useEffect(() => {
+    if (debounced.length < 2) {
+      setResults([]);
+      return;
+    }
+    let cancelled = false;
+    const needle = debounced.toLowerCase();
+    void Promise.allSettled([api.sessions(), api.notes(debounced), api.memories(debounced)]).then(
+      ([sessions, notes, memories]) => {
+        if (cancelled) return;
+        const found: Command[] = [];
+        if (sessions.status === 'fulfilled') {
+          for (const session of (sessions.value.sessions as unknown as Session[])
+            .filter((item) => item.title.toLowerCase().includes(needle))
+            .slice(0, 3)) {
+            found.push({
+              id: `session:${session.id}`,
+              label: session.title,
+              hint: 'Conversation',
+              icon: 'chat',
+              keywords: '',
+              run: () =>
+                appStore.setState({
+                  sessionId: session.id,
+                  screen: 'workspace',
+                  paletteOpen: false,
+                }),
+            });
+          }
+        }
+        if (notes.status === 'fulfilled') {
+          for (const note of notes.value.notes.slice(0, 3)) {
+            found.push({
+              id: `note:${note.id}`,
+              label: note.title,
+              hint: 'Note',
+              icon: 'note',
+              keywords: '',
+              run: () => navigate('notes'),
+            });
+          }
+        }
+        if (memories.status === 'fulfilled') {
+          for (const memory of memories.value.memories.slice(0, 2)) {
+            found.push({
+              id: `memory:${memory.id}`,
+              label: memory.content,
+              hint: 'Memory',
+              icon: 'brain',
+              keywords: '',
+              run: () => navigate('memory'),
+            });
+          }
+        }
+        setResults(found);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [debounced]);
+
+  return results;
 }

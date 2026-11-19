@@ -2,7 +2,7 @@
   "name": "privia-desktop",
   "private": true,
   "version": "1.0.0",
-  "description": "PRIVIA desktop client - private personal AI",
+  "description": "PRIVIA desktop client - Your space. Your intelligence.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,11 +14,17 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "icons": "python3 ../../scripts/make_icons.py"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@tauri-apps/api": "^2.12.5",
+    "lucide-react": "^1.76.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.8",
@@ -40,10 +46,7 @@
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
     "vite": "^5.4.3",
-    "vitest": "^2.0.5"
-  },
-  "optionalDependencies": {
-    "@tauri-apps/api": "^1.6.0",
-    "@tauri-apps/cli": "^1.6.0"
+    "vitest": "^2.0.5",
+    "@tauri-apps/cli": "^2.12.6"
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basename, formatBytes, formatDuration, shortenPath, titleCase } from './format';
+import { basename, formatBytes, formatDuration, greeting, shortenPath, titleCase } from './format';
 
 describe('format helpers', () => {
   it('formats bytes at sensible precision', () => {
@@ -26,6 +26,13 @@ describe('format helpers', () => {
 
   it('extracts a basename and title-cases identifiers', () => {
     expect(basename('/a/b/c.txt')).toBe('c.txt');
+    expect(basename('C:\\Users\\me\\report.docx')).toBe('report.docx');
     expect(titleCase('files.search')).toBe('Files Search');
+  });
+
+  it('greets by the time of day', () => {
+    expect(greeting(new Date(2026, 0, 1, 9))).toBe('Good morning');
+    expect(greeting(new Date(2026, 0, 1, 14))).toBe('Good afternoon');
+    expect(greeting(new Date(2026, 0, 1, 21))).toBe('Good evening');
   });
 });

@@ -1,260 +1,515 @@
 import { useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
 import { api } from '@/lib/api';
-import { pushToast } from '@/lib/store';
+import {
+  backendProcessStatus,
+  getConnection,
+  isDesktop,
+  openExternal,
+  restartBackend,
+} from '@/lib/connection';
+import { preferencesStore, savePreferences } from '@/lib/preferences';
+import { navigate, pushToast } from '@/lib/store';
+import { refreshStatus, statusStore } from '@/lib/status';
 import { formatBytes, formatDuration } from '@/lib/format';
-import { Chip, Dot, ErrorState, Icon, Section, SkeletonList } from '@/components/primitives';
+import {
+  Chip,
+  Dot,
+  Icon,
+  Page,
+  RiskChip,
+  Section,
+  Segmented,
+  SkeletonList,
+  Spinner,
+  Toggle,
+} from '@/components/primitives';
+
+export const RELEASES_URL = 'https://github.com/MohitKB22/Privia/releases';
 
 export function Settings() {
-  const status = useAsync(() => api.status(), []);
-  const secrets = useAsync(() => api.secrets(), []);
-  const tools = useAsync(() => api.tools(), []);
-  const [secretKey, setSecretKey] = useState('');
-  const [secretValue, setSecretValue] = useState('');
-  const [busy, setBusy] = useState(false);
+  const status = statusStore.useStore((state) => state.status);
+  const prefs = preferencesStore.useStore((state) => state.values);
 
-  if (status.error) {
-    return (
-      <div className="p-6">
-        <ErrorState
-          detail={status.error.message}
-          code={status.error.code}
-          onRetry={status.reload}
-        />
-      </div>
+  const save = (patch: Parameters<typeof savePreferences>[0]) =>
+    void savePreferences(patch).catch((caught: unknown) =>
+      pushToast({ kind: 'error', title: 'Not saved', detail: (caught as Error).message }),
     );
-  }
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
-      <div className="mx-auto max-w-3xl space-y-4">
-        <header>
-          <h1 className="text-xl font-semibold tracking-tight text-graphite-100">Settings</h1>
-          <p className="mt-1 text-sm text-graphite-500">
-            Models, credentials and diagnostics. Privacy controls live in the Privacy Center.
-          </p>
-        </header>
+    <Page
+      width="max-w-3xl"
+      intro="How PRIVIA looks, which model it uses, and what to do when something is wrong. Privacy controls live in the Privacy Center."
+    >
+      <Section title="Appearance">
+        <div className="divide-y divide-graphite-800">
+          <div className="flex items-center justify-between py-3">
+            <span>
+              <span className="block text-sm text-graphite-200">Theme</span>
+              <span className="mt-0.5 block text-sm text-graphite-500">
+                PRIVIA uses one dark theme, designed for long sessions.
+              </span>
+            </span>
+            <Chip>Dark</Chip>
+          </div>
+          <Toggle
+            checked={prefs.reduce_motion}
+            onChange={(next) => save({ reduce_motion: next })}
+            label="Reduce motion"
+            description="Turn off transitions and animations."
+          />
+          <Toggle
+            checked={prefs.sidebar_collapsed}
+            onChange={(next) => save({ sidebar_collapsed: next })}
+            label="Compact sidebar"
+            description="Show only icons in the navigation."
+          />
+          <label className="flex items-center justify-between gap-6 py-3">
+            <span>
+              <span className="block text-sm text-graphite-200">Your name</span>
+              <span className="mt-0.5 block text-sm text-graphite-500">
+                Used only for the greeting on Home.
+              </span>
+            </span>
+            <NameField
+              initial={prefs.display_name}
+              onSave={(display_name) => save({ display_name })}
+            />
+          </label>
+        </div>
+      </Section>
 
-        {status.loading ? (
-          <SkeletonList rows={5} />
-        ) : status.data ? (
-          <>
-            <Section
-              title="Models"
-              description="Configured through environment variables or a .env file."
-            >
-              <dl className="divide-y divide-graphite-850 text-sm">
-                <Row label="Local model">
-                  <span className="flex items-center gap-2">
-                    <Dot tone={status.data.models.local.available ? 'ok' : 'warn'} />
-                    <span className="font-mono">
-                      {status.data.models.local.provider}:{status.data.models.local.model}
-                    </span>
-                  </span>
-                </Row>
-                <Row label="Detail">
-                  <span className="text-graphite-500">{status.data.models.local.detail}</span>
-                </Row>
-                <Row label="Cloud model">
-                  {status.data.models.cloud ? (
-                    <span className="font-mono">
-                      {status.data.models.cloud.provider}:{status.data.models.cloud.model}
-                    </span>
-                  ) : (
-                    <span className="text-graphite-500">not configured (local only)</span>
-                  )}
-                </Row>
-                <Row label="Embeddings">
+      <ModelSettings />
+
+      <Section
+        title="Speech"
+        description="Speech runs on this computer. Audio is never stored or uploaded."
+      >
+        {status ? (
+          <dl className="divide-y divide-graphite-800 text-sm">
+            <Row label="Speech to text">
+              <StatusLine
+                ok={status.speech.stt.status === 'ready'}
+                text={status.speech.stt.detail}
+              />
+            </Row>
+            <Row label="Text to speech">
+              <StatusLine
+                ok={status.speech.tts.status === 'ready'}
+                text={status.speech.tts.detail}
+              />
+            </Row>
+          </dl>
+        ) : (
+          <SkeletonList rows={2} />
+        )}
+      </Section>
+
+      <Section
+        title="Storage"
+        description="Everything PRIVIA keeps is in one SQLite database on this computer."
+      >
+        {status ? (
+          <dl className="divide-y divide-graphite-800 text-sm">
+            <Row label="Database">
+              <span className="break-all font-mono text-xs text-graphite-300">
+                {status.database.path}
+              </span>
+            </Row>
+            <Row label="Size">{formatBytes(status.database.size_bytes)}</Row>
+            <Row label="Schema">version {status.database.schema_version}</Row>
+          </dl>
+        ) : (
+          <SkeletonList rows={2} />
+        )}
+        <button
+          type="button"
+          className="btn-quiet mt-3 px-0 text-xs"
+          onClick={() => navigate('privacy')}
+        >
+          Export or delete your data in the Privacy Center
+          <Icon name="arrowRight" className="h-3.5 w-3.5" />
+        </button>
+      </Section>
+
+      <Section
+        title="Permissions"
+        description="What PRIVIA may read and do is decided per permission, and every decision is recorded."
+      >
+        <button type="button" className="btn-ghost" onClick={() => navigate('privacy')}>
+          <Icon name="shield" className="h-3.5 w-3.5" />
+          Open the Privacy Center
+        </button>
+      </Section>
+
+      <Section title="Startup">
+        <div className="flex items-center justify-between gap-6">
+          <span>
+            <span className="block text-sm text-graphite-200">Open PRIVIA on</span>
+            <span className="mt-0.5 block text-sm text-graphite-500">
+              The screen you see when the app starts.
+            </span>
+          </span>
+          <Segmented<'home' | 'workspace'>
+            label="Start screen"
+            value={prefs.start_screen}
+            onChange={(next) => save({ start_screen: next })}
+            options={[
+              { value: 'home', label: 'Home' },
+              { value: 'workspace', label: 'AI Workspace' },
+            ]}
+          />
+        </div>
+      </Section>
+
+      <Section
+        title="Updates"
+        description="PRIVIA does not update itself or check for updates in the background, because that would mean contacting a server."
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-graphite-300">Version {status?.version ?? '…'}</span>
+          <button
+            type="button"
+            className="btn-ghost ml-auto"
+            onClick={() => void openExternal(RELEASES_URL)}
+          >
+            Check releases on GitHub
+            <Icon name="arrowRight" className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </Section>
+
+      <Troubleshooting />
+      <ToolCatalogue />
+    </Page>
+  );
+}
+
+function NameField({ initial, onSave }: { initial: string; onSave: (value: string) => void }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <input
+      className="field w-48"
+      value={value}
+      maxLength={40}
+      placeholder="Optional"
+      aria-label="Your name"
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => value.trim() !== initial && onSave(value.trim())}
+    />
+  );
+}
+
+function ModelSettings() {
+  const models = useAsync(() => api.models(), []);
+  const [switching, setSwitching] = useState<string | null>(null);
+
+  const choose = async (model: string) => {
+    setSwitching(model);
+    try {
+      await api.setLocalModel(model);
+      pushToast({ kind: 'success', title: 'Model changed', detail: model });
+      models.reload();
+      void refreshStatus();
+    } catch (caught) {
+      pushToast({ kind: 'error', title: 'Could not switch', detail: (caught as Error).message });
+    } finally {
+      setSwitching(null);
+    }
+  };
+
+  const data = models.data;
+  const ollamaMissing = data?.local_provider === 'ollama' && data.installed.length === 0;
+
+  return (
+    <Section
+      title="AI model"
+      description="PRIVIA runs models on this computer through Ollama. Local models use your own hardware, so there is no subscription and nothing leaves the machine."
+      action={
+        <button
+          type="button"
+          className="btn-quiet h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+          onClick={models.reload}
+        >
+          <Icon name="refresh" className="h-3.5 w-3.5" />
+          Check again
+        </button>
+      }
+    >
+      {models.loading && !data ? (
+        <SkeletonList rows={3} />
+      ) : data ? (
+        <>
+          <dl className="divide-y divide-graphite-800 text-sm">
+            <Row label="Local runtime">
+              <StatusLine
+                ok={data.local.available}
+                text={
+                  data.local_provider === 'ollama'
+                    ? `Ollama at ${data.ollama_url}`
+                    : 'Offline planner (no model)'
+                }
+              />
+            </Row>
+            <Row label="Active model">
+              <span className="font-mono text-xs">{data.local.model}</span>
+              <span className="ml-2 text-xs text-graphite-500">{data.local.detail}</span>
+            </Row>
+            <Row label="Cloud">
+              {data.cloud ? (
+                <span className="text-xs">
                   <span className="font-mono">
-                    {status.data.models.embeddings.model} ·{' '}
-                    {status.data.models.embeddings.dimensions}d
+                    {data.cloud.provider}:{data.cloud.model}
                   </span>
-                </Row>
-                <Row label="Speech to text">
-                  <span className="flex items-center gap-2">
-                    <Dot tone={status.data.speech.stt.status === 'ready' ? 'ok' : 'warn'} />
-                    <span className="text-graphite-500">{status.data.speech.stt.detail}</span>
+                  <span className="ml-2 text-graphite-500">
+                    {data.cloud_enabled ? 'enabled' : 'configured, switched off'}
                   </span>
-                </Row>
-                <Row label="Text to speech">
-                  <span className="text-graphite-500">{status.data.speech.tts.detail}</span>
-                </Row>
-              </dl>
-              <div className="mt-4 rounded-lg border border-graphite-800 bg-graphite-950/60 p-3">
-                <p className="text-2xs text-graphite-500">
-                  To use a local language model, install Ollama and pull a model:
-                </p>
-                <pre className="mt-1.5 font-mono text-2xs text-accent">
-                  {`ollama pull ${status.data.models.local.model}
-ollama serve`}
-                </pre>
-              </div>
-            </Section>
-
-            <Section
-              title="Credentials"
-              description="Stored in the OS keychain or an encrypted local file. Never written to the database, never logged, never returned by the API."
-            >
-              {secrets.loading ? (
-                <SkeletonList rows={2} />
-              ) : secrets.data ? (
-                <>
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-2xs">
-                    <Chip tone="accent">
-                      <Icon name="lock" className="h-3 w-3" />
-                      {secrets.data.writable_backend}
-                    </Chip>
-                    {secrets.data.stored_keys.length === 0 ? (
-                      <span className="text-graphite-600">nothing stored</span>
-                    ) : (
-                      secrets.data.stored_keys.map((key) => (
-                        <span key={key} className="chip border-graphite-700 text-graphite-400">
-                          {key}
-                          <button
-                            type="button"
-                            aria-label={`Delete ${key}`}
-                            className="ml-1 text-graphite-600 hover:text-danger"
-                            onClick={async () => {
-                              await api.deleteSecret(key);
-                              pushToast({ kind: 'success', title: 'Credential removed' });
-                              secrets.reload();
-                            }}
-                          >
-                            <Icon name="x" className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))
-                    )}
-                  </div>
-                  <form
-                    className="flex gap-2"
-                    onSubmit={async (event) => {
-                      event.preventDefault();
-                      setBusy(true);
-                      try {
-                        await api.setSecret(secretKey, secretValue);
-                        setSecretKey('');
-                        setSecretValue('');
-                        pushToast({ kind: 'success', title: 'Credential stored' });
-                        secrets.reload();
-                      } catch (caught) {
-                        pushToast({
-                          kind: 'error',
-                          title: 'Refused',
-                          detail: caught instanceof Error ? caught.message : undefined,
-                        });
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    <select
-                      className="field"
-                      aria-label="Credential"
-                      value={secretKey}
-                      onChange={(event) => setSecretKey(event.target.value)}
-                    >
-                      <option value="">Choose…</option>
-                      {secrets.data.settable_keys.map((key) => (
-                        <option key={key} value={key}>
-                          {key}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      className="field"
-                      type="password"
-                      autoComplete="off"
-                      placeholder="Value"
-                      aria-label="Credential value"
-                      value={secretValue}
-                      onChange={(event) => setSecretValue(event.target.value)}
-                    />
-                    <button
-                      type="submit"
-                      className="btn-ghost"
-                      disabled={busy || !secretKey || !secretValue}
-                    >
-                      Store
-                    </button>
-                  </form>
-                </>
-              ) : null}
-            </Section>
-
-            <Section title="Runtime" description="Diagnostics for this installation.">
-              <dl className="divide-y divide-graphite-850 text-sm">
-                <Row label="Version">
-                  <span className="font-mono">{status.data.version}</span>
-                </Row>
-                <Row label="Environment">
-                  <span className="font-mono">{status.data.app_env}</span>
-                </Row>
-                <Row label="Python">
-                  <span className="font-mono">
-                    {status.data.python} on {status.data.platform}
-                  </span>
-                </Row>
-                <Row label="Uptime">
-                  <span>{formatDuration(status.data.uptime_seconds * 1000)}</span>
-                </Row>
-                <Row label="Database">
-                  <span className="break-all font-mono text-2xs">
-                    {status.data.database.path} · v{status.data.database.schema_version} ·{' '}
-                    {formatBytes(status.data.database.size_bytes)}
-                  </span>
-                </Row>
-                <Row label="Tools">
-                  <span>{status.data.tools} registered</span>
-                </Row>
-              </dl>
-            </Section>
-
-            <Section
-              title="Tool catalogue"
-              description="Everything PRIVIA can do, with the permission each needs."
-            >
-              {tools.loading ? (
-                <SkeletonList rows={5} />
+                </span>
               ) : (
-                <ul className="divide-y divide-graphite-850">
-                  {(tools.data ?? []).map((tool) => (
-                    <li key={tool.name} className="flex items-start gap-3 py-2.5">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-mono text-2xs text-graphite-200">{tool.name}</p>
-                        <p className="mt-0.5 text-sm text-graphite-500">{tool.description}</p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span
-                          className={`chip ${
-                            tool.risk_level === 'critical' || tool.risk_level === 'high'
-                              ? 'border-caution/40 text-caution'
-                              : 'border-graphite-700 text-graphite-500'
-                          }`}
-                        >
-                          {tool.risk_level}
-                        </span>
-                        {tool.requires_confirmation ? (
-                          <span className="chip border-accent/30 text-accent">asks first</span>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <span className="text-xs text-graphite-500">
+                  Not configured. Basic use never needs it.
+                </span>
               )}
-            </Section>
-          </>
-        ) : null}
-      </div>
+            </Row>
+          </dl>
+
+          {data.installed.length ? (
+            <div className="mt-4">
+              <p className="label mb-2">Installed models</p>
+              <ul className="space-y-1">
+                {data.installed.map((name) => {
+                  const active = name === data.local.model || name === `${data.local.model}:latest`;
+                  return (
+                    <li
+                      key={name}
+                      className="flex items-center gap-3 rounded-lg border border-graphite-800 px-3 py-2"
+                    >
+                      <Icon name="cpu" className="h-3.5 w-3.5 text-graphite-500" />
+                      <span className="flex-1 font-mono text-xs text-graphite-200">{name}</span>
+                      {active ? (
+                        <Chip tone="brand">In use</Chip>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-ghost h-7 text-xs"
+                          disabled={switching !== null}
+                          onClick={() => void choose(name)}
+                        >
+                          {switching === name ? (
+                            <Spinner className="h-3.5 w-3.5" />
+                          ) : (
+                            'Use this model'
+                          )}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          {ollamaMissing ? <OllamaGuide /> : null}
+        </>
+      ) : null}
+    </Section>
+  );
+}
+
+export function OllamaGuide() {
+  return (
+    <div className="mt-4 rounded-xl border border-graphite-700 bg-graphite-900 p-4">
+      <p className="text-sm font-medium text-graphite-100">Set up a local model</p>
+      <ol className="mt-3 space-y-3 text-sm text-graphite-400">
+        <li className="flex gap-3">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-graphite-600 text-2xs text-graphite-300">
+            1
+          </span>
+          <span>
+            Install Ollama, the free local model runtime, from{' '}
+            <button
+              type="button"
+              className="text-graphite-100 underline decoration-brand-line underline-offset-2"
+              onClick={() => void openExternal('https://ollama.com/download')}
+            >
+              ollama.com/download
+            </button>
+            , then open it.
+          </span>
+        </li>
+        <li className="flex gap-3">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-graphite-600 text-2xs text-graphite-300">
+            2
+          </span>
+          <span>
+            Download a model. In a terminal, run
+            <code className="mx-1 rounded bg-graphite-800 px-1.5 py-0.5 font-mono text-xs text-graphite-100">
+              ollama pull llama3.2:3b
+            </code>
+            (about 2 GB, good for 8 GB of RAM) or
+            <code className="mx-1 rounded bg-graphite-800 px-1.5 py-0.5 font-mono text-xs text-graphite-100">
+              ollama pull llama3.1:8b
+            </code>
+            (about 5 GB, better answers, 16 GB of RAM recommended).
+          </span>
+        </li>
+        <li className="flex gap-3">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-graphite-600 text-2xs text-graphite-300">
+            3
+          </span>
+          <span>Press “Check again”, then choose the model here.</span>
+        </li>
+      </ol>
+      <p className="mt-3 text-xs text-graphite-500">
+        Until then, PRIVIA uses its offline planner: files, notes, calendar and memory still work,
+        with simpler answers.
+      </p>
     </div>
+  );
+}
+
+function Troubleshooting() {
+  const status = statusStore.useStore((state) => state.status);
+  const processState = useAsync(() => backendProcessStatus(), []);
+  const [restarting, setRestarting] = useState(false);
+
+  const copyDiagnostics = async () => {
+    const connection = await getConnection();
+    const lines = [
+      `PRIVIA ${status?.version ?? '?'} (${connection.desktop ? 'desktop' : 'browser'}, ${connection.platform})`,
+      `Backend: python ${status?.python ?? '?'} on ${status?.platform ?? '?'}, ${status?.app_env ?? '?'}`,
+      `Model: ${status?.models.local.provider}:${status?.models.local.model} available=${status?.models.local.available}`,
+      `Cloud processing: ${status?.privacy.cloud_processing_enabled ? 'on' : 'off'}`,
+      `Database schema: ${status?.database.schema_version}`,
+      `Uptime: ${status ? formatDuration(status.uptime_seconds * 1000) : '?'}`,
+      ...(status?.warnings ?? []).map((w) => `Warning: ${w}`),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      pushToast({
+        kind: 'success',
+        title: 'Diagnostics copied',
+        detail: 'No file paths, messages or personal data are included.',
+      });
+    } catch {
+      pushToast({ kind: 'error', title: 'The clipboard is not available' });
+    }
+  };
+
+  const restart = async () => {
+    setRestarting(true);
+    await restartBackend().catch(() => undefined);
+    window.setTimeout(() => {
+      void refreshStatus();
+      processState.reload();
+      setRestarting(false);
+    }, 2500);
+  };
+
+  const process = processState.data;
+
+  return (
+    <Section title="Troubleshooting">
+      <div className="flex flex-wrap gap-2">
+        {isDesktop() ? (
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={restarting}
+            onClick={() => void restart()}
+          >
+            {restarting ? (
+              <Spinner className="h-3.5 w-3.5" />
+            ) : (
+              <Icon name="refresh" className="h-3.5 w-3.5" />
+            )}
+            Restart assistant
+          </button>
+        ) : null}
+        <button type="button" className="btn-ghost" onClick={() => void copyDiagnostics()}>
+          <Icon name="copy" className="h-3.5 w-3.5" />
+          Copy diagnostics
+        </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => void savePreferences({ onboarding_completed: false })}
+        >
+          <Icon name="regenerate" className="h-3.5 w-3.5" />
+          Run setup again
+        </button>
+      </div>
+      {status?.warnings.length ? (
+        <ul className="mt-4 space-y-1 text-sm text-caution">
+          {status.warnings.map((warning) => (
+            <li key={warning} className="flex gap-2">
+              <Icon name="alert" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {warning}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {process?.log_tail.length ? (
+        <details className="mt-4 rounded-lg border border-graphite-800 bg-graphite-900">
+          <summary className="cursor-pointer px-3 py-2 text-xs text-graphite-400">
+            Backend log (last {process.log_tail.length} lines)
+          </summary>
+          <pre className="max-h-64 overflow-auto border-t border-graphite-800 px-3 py-2 font-mono text-2xs leading-relaxed text-graphite-400">
+            {process.log_tail.join('\n')}
+          </pre>
+        </details>
+      ) : null}
+    </Section>
+  );
+}
+
+function ToolCatalogue() {
+  const tools = useAsync(() => api.tools(), []);
+  return (
+    <Section
+      title="Tools"
+      description="Every action PRIVIA can take. The model can only propose these; a separate runtime checks permissions and arguments before anything runs."
+    >
+      <details>
+        <summary className="cursor-pointer text-sm text-graphite-400">
+          Show all {tools.data?.length ?? ''} tools
+        </summary>
+        <ul className="mt-3 divide-y divide-graphite-800 rounded-lg border border-graphite-800">
+          {(tools.data ?? []).map((tool) => (
+            <li key={tool.name} className="flex items-center gap-3 px-3 py-2">
+              <span className="w-44 shrink-0 font-mono text-xs text-graphite-200">{tool.name}</span>
+              <span
+                className="min-w-0 flex-1 truncate text-xs text-graphite-500"
+                title={tool.description}
+              >
+                {tool.description}
+              </span>
+              {tool.requires_confirmation ? <Chip tone="caution">asks first</Chip> : null}
+              <RiskChip level={tool.risk_level} />
+            </li>
+          ))}
+        </ul>
+      </details>
+    </Section>
   );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[8rem_1fr] items-center gap-3 py-2">
-      <dt className="text-graphite-500">{label}</dt>
-      <dd className="min-w-0 text-graphite-200">{children}</dd>
+    <div className="flex items-start gap-4 py-2.5">
+      <dt className="w-32 shrink-0 text-graphite-500">{label}</dt>
+      <dd className="min-w-0 flex-1 text-graphite-200">{children}</dd>
     </div>
+  );
+}
+
+function StatusLine({ ok, text }: { ok: boolean; text: string }) {
+  return (
+    <span className="flex items-start gap-2 text-xs">
+      <span className="mt-1.5">
+        <Dot tone={ok ? 'ok' : 'warn'} />
+      </span>
+      <span className="text-graphite-300">{text}</span>
+    </span>
   );
 }
