@@ -1,0 +1,22 @@
+# Secret scanning for CI (gitleaks). Every default rule stays on.
+#
+# The redaction and secret-store tests need realistic-looking fake credentials.
+# Only these exact fixture strings are allowed; any other match, anywhere in the
+# repository, still fails the build. Never add a real credential here: rotate it.
+title = "PRIVIA"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake credentials used as test fixtures"
+regexes = [
+  '''^sk-abcdefghijklmnopqrst(uvwx)?$''',
+  '''^sk-ant-abcdefghijklmnopqrst$''',
+  '''^sk-live-0123456789abcdefghijklmnopqrstuv$''',
+  '''^sk-(secret-value|should-not-appear|secret|test)$''',
+  '''^ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345$''',
+  '''^AKIAIOSFODNN7EXAMPLE$''',
+  '''^xoxb-1234567890-abcdefghij$''',
+  '''^AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456$''',
+]
