@@ -23,18 +23,23 @@ jobs:
   python:
     name: Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Windows has not been verified yet: its failures are reported, not blocking.
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python: ["3.10", "3.11", "3.12"]
+        python: ["3.10", "3.11", "3.12", "3.13"]
         include:
           - os: macos-latest
             python: "3.12"
+          - os: windows-latest
+            python: "3.12"
+            experimental: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -72,7 +77,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.python == '3.12' && matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.xml
@@ -85,11 +90,11 @@ jobs:
       run:
         working-directory: apps/desktop
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
@@ -112,21 +117,68 @@ jobs:
         run: npm run build
 
       - name: Upload web build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-web-build
           path: apps/desktop/dist
           retention-days: 7
 
+  shell:
+    name: Desktop shell (Rust)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Icons and a placeholder sidecar
+        # tauri-build checks that icons and the sidecar exist. The real sidecar
+        # is built and tested in the release workflow.
+        run: |
+          pip install pillow
+          (cd apps/desktop && npm ci --no-audit --no-fund)
+          python scripts/make_icons.py
+          mkdir -p apps/desktop/dist apps/desktop/src-tauri/binaries
+          touch "apps/desktop/src-tauri/binaries/privia-backend-$(rustc -vV | sed -n 's/^host: //p')"
+
+      - name: Format
+        working-directory: apps/desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --locked -- -D warnings
+
   security:
     name: Security analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -139,6 +191,9 @@ jobs:
 
       - name: Static analysis (bandit)
         run: bandit -c pyproject.toml -r packages services apps/api -f screen
+
+      - name: Adversarial tests
+        run: pytest tests/security -q
 
       - name: Dependency audit (pip-audit)
         run: pip-audit --strict || echo "::warning::pip-audit reported findings"
@@ -167,9 +222,9 @@ jobs:
     name: Works with no network
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip

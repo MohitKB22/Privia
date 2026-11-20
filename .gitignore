@@ -58,3 +58,6 @@ vite.config.ts.timestamp-*
 apps/desktop/src-tauri/icons/*
 !apps/desktop/src-tauri/icons/README.md
 apps/desktop/src-tauri/binaries/
+
+# Installers collected by scripts/package_desktop.sh
+/release/

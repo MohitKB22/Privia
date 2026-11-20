@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>PRIVIA · Your space. Your intelligence.</title>
+    <meta
+      name="description"
+      content="PRIVIA is a private, local-first AI assistant for your desktop. It runs a local model through Ollama, asks before it acts, and keeps a full record of what it did. Free and open source."
+    />
+    <meta property="og:title" content="PRIVIA · Your space. Your intelligence." />
+    <meta property="og:description" content="A private AI assistant that runs on your own computer." />
+    <meta property="og:image" content="assets/screenshot-home.webp" />
+    <link rel="icon" href="assets/privia-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="#top" aria-label="PRIVIA home">
+          <img src="assets/privia-slash.svg" alt="" width="12" height="22" />
+          <span>PRIVIA</span>
+        </a>
+        <nav aria-label="Sections">
+          <a href="#features">Features</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#download">Download</a>
+          <a href="#install">Install</a>
+          <a href="#faq">FAQ</a>
+          <a href="https://github.com/MohitKB22/Privia" rel="noopener">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero wrap">
+        <p class="eyebrow"><span class="dot"></span> Free · Open source · Local first</p>
+        <h1>Your space.<br />Your intelligence.</h1>
+        <p class="lead">
+          PRIVIA is a personal AI assistant that runs on your own computer. It reads only the folders
+          you allow, asks before it acts, and shows you everything it did.
+        </p>
+        <div class="cta">
+          <a class="button primary" id="primary-download" href="#download">Download PRIVIA</a>
+          <a class="button" href="https://github.com/MohitKB22/Privia">View the source</a>
+        </div>
+        <p class="meta" id="release-meta">macOS · Windows · Linux</p>
+        <figure class="shot">
+          <img
+            src="assets/screenshot-home.webp"
+            alt="PRIVIA's Home screen: a greeting, a prompt box, local memory, connected sources and pending approvals, and a timeline of recent activity."
+            width="1360"
+            height="860"
+          />
+        </figure>
+      </section>
+
+      <section id="features" class="wrap section">
+        <h2>Everything you need, with your own private assistant</h2>
+        <div class="grid three">
+          <article class="card">
+            <h3>AI Workspace</h3>
+            <p>Conversations with streaming replies, Markdown and code, history, and a stop button. Every reply says where it was processed.</p>
+          </article>
+          <article class="card">
+            <h3>Your files</h3>
+            <p>Search, read and summarize documents in the folders you choose. Everything else on your computer stays invisible.</p>
+          </article>
+          <article class="card">
+            <h3>Personal memory</h3>
+            <p>PRIVIA remembers what you ask it to, shows where each memory came from, and forgets on request. It refuses to store passwords and keys.</p>
+          </article>
+          <article class="card">
+            <h3>Notes and planner</h3>
+            <p>Notes with full-text search and local summaries. A day and week planner backed by calendar files on your disk.</p>
+          </article>
+          <article class="card">
+            <h3>Email drafts</h3>
+            <p>Draft and reply locally. Sending always shows the exact message and recipients, and waits for your approval.</p>
+          </article>
+          <article class="card">
+            <h3>Activity and Privacy Center</h3>
+            <p>A complete record of every tool call, approval and refusal, plus one place to see and change what PRIVIA can access.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="privacy" class="wrap section split">
+        <div>
+          <h2>Private by design, not by promise</h2>
+          <p class="muted">
+            The language model only proposes actions. A separate, deterministic runtime checks each one
+            against your permissions before anything runs.
+          </p>
+          <ul class="checks">
+            <li><strong>Runs locally.</strong> A local model through Ollama, a local database, local speech. No account.</li>
+            <li><strong>No telemetry.</strong> PRIVIA does not phone home, check for updates in the background, or sync.</li>
+            <li><strong>Nothing allowed by default.</strong> Each kind of access is granted separately and can be revoked.</li>
+            <li><strong>Approval is exact.</strong> An approval covers one action with its exact arguments in one conversation.</li>
+            <li><strong>Content is not a command.</strong> Web pages, emails and files can inform PRIVIA but never instruct it.</li>
+            <li><strong>Locked-down local API.</strong> Loopback only, a per-launch token, and protection against DNS rebinding.</li>
+            <li><strong>Cloud is optional.</strong> Off by default. If you turn it on, every reply that used it is labeled.</li>
+          </ul>
+        </div>
+        <figure class="shot small">
+          <img src="assets/screenshot-privacy.webp" alt="The PRIVIA Privacy Center showing that nothing is leaving the device, the processing settings and the allowed folders." width="1360" height="860" loading="lazy" />
+        </figure>
+      </section>
+
+      <section id="download" class="wrap section">
+        <h2>Download</h2>
+        <p class="muted" id="download-status">Checking the latest release…</p>
+        <div class="grid three downloads">
+          <article class="card os" data-os="macos">
+            <h3>macOS</h3>
+            <p class="muted">macOS 11 or later</p>
+            <div class="links" data-links="macos"></div>
+          </article>
+          <article class="card os" data-os="windows">
+            <h3>Windows</h3>
+            <p class="muted">Windows 10 or 11, 64-bit</p>
+            <div class="links" data-links="windows"></div>
+          </article>
+          <article class="card os" data-os="linux">
+            <h3>Linux</h3>
+            <p class="muted">x86-64, glibc 2.35 or later</p>
+            <div class="links" data-links="linux"></div>
+          </article>
+        </div>
+        <p class="note">
+          Every release lists SHA-256 checksums in <code>SHA256SUMS.txt</code>. The installers are
+          currently <strong>not signed</strong> with an Apple or Microsoft certificate, so your
+          system will warn you the first time. See the install steps below.
+        </p>
+      </section>
+
+      <section id="install" class="wrap section">
+        <h2>Install in three steps</h2>
+        <div class="grid three">
+          <article class="card step">
+            <span class="num">1</span>
+            <h3>Install PRIVIA</h3>
+            <p><strong>macOS:</strong> open the .dmg and drag PRIVIA to Applications. On first launch, if macOS blocks it, open System Settings → Privacy &amp; Security and choose <em>Open Anyway</em>.</p>
+            <p><strong>Windows:</strong> run the setup .exe. If SmartScreen appears, choose <em>More info → Run anyway</em>.</p>
+            <p><strong>Linux:</strong> install the .deb or .rpm, or make the .AppImage executable and run it.</p>
+          </article>
+          <article class="card step">
+            <span class="num">2</span>
+            <h3>Add a local model</h3>
+            <p>Install <a href="https://ollama.com/download" rel="noopener">Ollama</a>, then run:</p>
+            <pre><code>ollama pull llama3.2:3b</code></pre>
+            <p class="muted">About 2 GB, fine with 8 GB of RAM. For better answers with 16 GB, use <code>llama3.1:8b</code>. Without a model, PRIVIA still works with its offline planner.</p>
+          </article>
+          <article class="card step">
+            <span class="num">3</span>
+            <h3>Follow the setup</h3>
+            <p>PRIVIA checks your system, finds your model, explains its permissions and lets you grant access one item at a time. Nothing is allowed until you say so.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="wrap section">
+        <h2>Free to use. The compute is yours.</h2>
+        <p class="muted narrow">
+          PRIVIA is free and needs no subscription for local use. A local model runs on your own
+          processor and memory, so speed depends on your computer. Cloud providers are optional and,
+          if you choose one, you pay that provider with your own API key.
+        </p>
+      </section>
+
+      <section id="faq" class="wrap section">
+        <h2>Questions</h2>
+        <details>
+          <summary>Does PRIVIA send my data anywhere?</summary>
+          <p>Not by default. Models, memory, notes, history and the audit log stay on your computer. Data leaves only if you enable a cloud provider and choose to use it, and every reply that did is labeled.</p>
+        </details>
+        <details>
+          <summary>Do I need a powerful computer?</summary>
+          <p>PRIVIA itself is light. The local model is the heavy part: 8 GB of RAM runs a 3B model comfortably, and 16 GB is recommended for 8B models. Apple Silicon and recent GPUs are much faster.</p>
+        </details>
+        <details>
+          <summary>What can PRIVIA do without a model?</summary>
+          <p>Its offline planner still finds and summarizes files, manages notes, memory and your calendar, and drafts email, with simpler wording.</p>
+        </details>
+        <details>
+          <summary>Can PRIVIA delete my files or send email on its own?</summary>
+          <p>No. Deleting, moving or overwriting files, sending email, changing events and running commands always show you the exact action and wait for your approval, every time.</p>
+        </details>
+        <details>
+          <summary>Why does my system warn me when I open it?</summary>
+          <p>The current builds are not signed with paid Apple or Microsoft certificates. You can verify a download against SHA256SUMS.txt on the release page, or build PRIVIA from source.</p>
+        </details>
+        <details>
+          <summary>How do I uninstall it and remove my data?</summary>
+          <p>Remove the app the usual way for your system. PRIVIA keeps its data in the <code>.privia</code> folder in your home directory; delete it to remove everything, or use Privacy Center → Delete data first.</p>
+        </details>
+      </section>
+
+      <section class="wrap section">
+        <h2>Documentation</h2>
+        <div class="grid three">
+          <a class="card link" href="https://github.com/MohitKB22/Privia#readme"><h3>README</h3><p class="muted">Features, architecture and development setup.</p></a>
+          <a class="card link" href="https://github.com/MohitKB22/Privia/blob/main/SECURITY.md"><h3>Security model</h3><p class="muted">Threat model, guarantees and how to report a vulnerability.</p></a>
+          <a class="card link" href="https://github.com/MohitKB22/Privia/blob/main/PRIVACY.md"><h3>Privacy</h3><p class="muted">What PRIVIA stores, where, and how to remove it.</p></a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <span class="brand small"><img src="assets/privia-slash.svg" alt="" width="10" height="18" /> PRIVIA</span>
+        <span class="muted" id="footer-version">Apache-2.0</span>
+        <a href="https://github.com/MohitKB22/Privia/releases">Releases</a>
+        <a href="https://github.com/MohitKB22/Privia/issues">Report an issue</a>
+      </div>
+    </footer>
+    <script src="app.js" defer></script>
+  </body>
+</html>

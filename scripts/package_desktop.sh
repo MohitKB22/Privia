@@ -1,36 +1,40 @@
 #!/usr/bin/env bash
-# Build a distributable desktop application.
+# Build PRIVIA's installers for this computer's platform.
+#
+# Steps: freeze the backend into a sidecar, smoke-test it, draw the icons,
+# build the Tauri app, and copy the installers into ./release with stable names.
+# Run from a virtualenv with the project installed (make install-dev).
 set -euo pipefail
-cd "$(dirname "$0")/../apps/desktop"
+cd "$(dirname "$0")/.."
 
-echo "Checking prerequisites"
-command -v node >/dev/null || { echo "Node.js is required"; exit 1; }
+PY="${PY:-python}"
+command -v node >/dev/null || { echo "Node.js 20+ is required: https://nodejs.org"; exit 1; }
 if ! command -v cargo >/dev/null; then
-  cat <<'MSG'
-Rust is required to build the native desktop application.
-
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-You can still run the UI in a browser without it:  npm run dev
-MSG
+  echo "Rust is required to build the desktop app: https://rustup.rs"
+  echo "You can still run the UI in a browser with: make dev"
   exit 1
 fi
 
-if [ ! -f src-tauri/icons/icon.icns ] && [ ! -f src-tauri/icons/32x32.png ]; then
-  echo "Icons are missing. Generate them first:"
-  echo "  npm run tauri icon path/to/privia-1024.png"
-  exit 1
-fi
+target="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+case "$target" in
+  *apple-darwin)  label="macos-$([[ $target == aarch64* ]] && echo arm64 || echo x64)"; bundles="app,dmg" ;;
+  *windows*)      label="windows-x64"; bundles="msi,nsis" ;;
+  *)              label="linux-x64"; bundles="deb,rpm,appimage" ;;
+esac
+suffix=""; [[ "$target" == *windows* ]] && suffix=".exe"
 
-echo "Installing dependencies"
-npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+echo "==> Backend sidecar for $target"
+"$PY" -m pip install --quiet "pyinstaller>=6.10" pillow
+"$PY" packaging/backend/build_sidecar.py --target "$target"
+"$PY" packaging/backend/smoke_test.py "apps/desktop/src-tauri/binaries/privia-backend-${target}${suffix}"
 
-echo "Type checking and testing"
-npm run typecheck
-npm run test
+echo "==> Desktop UI"
+(cd apps/desktop && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund))
+"$PY" scripts/make_icons.py
 
-echo "Building"
-npm run tauri build
+echo "==> Installers ($bundles)"
+(cd apps/desktop && npx tauri build --target "$target" --bundles "$bundles")
+"$PY" packaging/collect_artifacts.py --label "$label" --target "$target"
 
 echo ""
-echo "Artefacts are in apps/desktop/src-tauri/target/release/bundle/"
+echo "Installers are in ./release"

@@ -7,7 +7,8 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 .PHONY: help install install-dev venv dev dev-api dev-ui doctor migrate db-reset \
         test test-unit test-integration test-security test-e2e test-ui coverage \
-        lint format typecheck security audit build build-ui build-desktop \
+        lint format typecheck security audit build build-ui build-desktop icons sidecar \
+        dev-desktop version \
         clean ci check
 
 PY ?= python3
@@ -39,7 +40,7 @@ install: $(VENV) ## Install runtime dependencies (Python + UI)
 	@echo "Installed. Next:  make migrate && make dev"
 
 install-dev: $(VENV) ## Install everything including dev and optional extras
-	$(BIN)/pip install -e ".[dev,speech,keychain]"
+	$(BIN)/pip install -e ".[dev,speech,keychain]" pillow
 	cd $(UI) && npm install --no-audit --no-fund
 
 # --- running -----------------------------------------------------------------
@@ -125,8 +126,21 @@ check: lint typecheck test security ## Everything CI runs
 build-ui: ## Build the web assets
 	cd $(UI) && npm run build
 
-build-desktop: build-ui ## Build the native desktop application (needs Rust)
-	cd $(UI) && npm run tauri build
+icons: ## Draw the app icons (needs Pillow and the UI dependencies)
+	$(BIN)/python scripts/make_icons.py
+
+sidecar: ## Freeze the backend into the desktop sidecar binary
+	$(BIN)/pip install --quiet "pyinstaller>=6.10"
+	$(BIN)/python packaging/backend/build_sidecar.py
+
+dev-desktop: ## Run the desktop shell against `make dev-api` (needs Rust)
+	cd $(UI) && PRIVIA_API_URL=http://127.0.0.1:8756 npx tauri dev
+
+build-desktop: ## Build installers for this platform into ./release (needs Rust)
+	PY=$(BIN)/python scripts/package_desktop.sh
+
+version: ## Show the version declared in every file
+	$(BIN)/python scripts/version.py check
 
 build: ## Build the Python distribution
 	$(BIN)/pip install --quiet build
@@ -137,6 +151,6 @@ build: ## Build the Python distribution
 clean: ## Remove build artefacts and caches
 	rm -rf build dist *.egg-info .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage
 	find . -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-	rm -rf $(UI)/dist $(UI)/node_modules/.vite
+	rm -rf $(UI)/dist $(UI)/node_modules/.vite release
 
 ci: check ## Alias for check
