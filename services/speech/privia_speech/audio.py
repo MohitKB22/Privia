@@ -7,11 +7,17 @@ plausible-sounding nonsense from a speech model, which is worse than an error.
 
 from __future__ import annotations
 
-import audioop
 import io
 import math
+import warnings
 import wave
 from dataclasses import dataclass
+
+with warnings.catch_warnings():
+    # Deprecated in Python 3.11 and 3.12, removed in 3.13, where the declared
+    # ``audioop-lts`` backport provides the same module without a warning.
+    warnings.simplefilter("ignore", DeprecationWarning)
+    import audioop
 
 TARGET_SAMPLE_RATE = 16_000
 MAX_AUDIO_SECONDS = 300
