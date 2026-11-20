@@ -1,9 +1,10 @@
-// Fill the download section from the latest published GitHub Release.
+// Keep the download section pointing at the latest published GitHub Release.
 //
-// Asset names follow PRIVIA-<version>-<platform>-<arch>.<ext> (see
-// packaging/collect_artifacts.py). If no release has been published yet, or
-// GitHub cannot be reached, the page says so and links to the releases page
-// instead of showing links that would not work.
+// index.html ships direct links to the current version, so downloads work
+// without JavaScript and when GitHub's API is unreachable or rate-limited
+// (60 requests an hour per visitor). When the API reports a newer release, its
+// assets replace those links. Asset names follow
+// PRIVIA-<version>-<platform>-<arch>.<ext> (see packaging/collect_artifacts.py).
 
 (function () {
   const REPO = 'MohitKB22/Privia';
@@ -41,10 +42,23 @@
   }
 
   function noRelease(message) {
-    status.textContent = message;
+    // Keep the links that shipped with the page; only fill boxes left empty.
+    let empty = false;
     document.querySelectorAll('[data-links]').forEach((box) => {
-      box.replaceChildren(el('a', { class: 'button small', href: RELEASES }, 'See releases'));
+      if (box.children.length) return;
+      empty = true;
+      box.append(el('a', { class: 'button small', href: RELEASES }, 'See releases'));
     });
+    if (empty) status.textContent = message;
+  }
+
+  function pickPrimary() {
+    const os = detectOs();
+    const preferred = os && document.querySelector(`[data-links="${os}"] a`);
+    if (preferred && preferred.getAttribute('href') !== RELEASES) {
+      primary.href = preferred.href;
+      primary.textContent = `Download for ${{ macos: 'macOS', windows: 'Windows', linux: 'Linux' }[os]}`;
+    }
   }
 
   fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
@@ -63,6 +77,8 @@
       footer.textContent = `Version ${version} · Apache-2.0`;
 
       const assets = release.assets || [];
+      if (!assets.length) return;
+      document.querySelectorAll('[data-links]').forEach((box) => box.replaceChildren());
       KINDS.forEach((kind) => {
         const asset = assets.find((a) => kind.match.test(a.name));
         if (!asset) return;
@@ -80,13 +96,6 @@
       document.querySelectorAll('[data-links]').forEach((box) => {
         if (!box.children.length) box.append(el('a', { class: 'button small', href: release.html_url }, 'All files'));
       });
-
-      const os = detectOs();
-      const preferred = os && document.querySelector(`[data-links="${os}"] a`);
-      if (preferred) {
-        primary.href = preferred.href;
-        primary.textContent = `Download for ${{ macos: 'macOS', windows: 'Windows', linux: 'Linux' }[os]}`;
-      }
     })
     .catch((error) => {
       noRelease(
@@ -94,5 +103,6 @@
           ? 'The first release has not been published yet. You can build PRIVIA from source today.'
           : 'GitHub could not be reached to look up the latest release.',
       );
-    });
+    })
+    .finally(pickPrimary);
 })();
