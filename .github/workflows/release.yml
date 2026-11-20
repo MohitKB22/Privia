@@ -173,10 +173,18 @@ jobs:
           sha256sum PRIVIA-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create the draft release
+      - name: Create the draft release, or attach to an existing one
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Created on GitHub's web page (which also creates the tag), or a
+            # rebuild of an existing tag: replace the installers, keep the text.
+            echo "Release $TAG exists; attaching the installers to it."
+            gh release upload "$TAG" release/* --clobber
+            exit 0
+          fi
           notes="docs/releases/${TAG}.md"
           [[ -f "$notes" ]] || notes="docs/releases/TEMPLATE.md"
           prerelease=""; [[ "$TAG" == *-* ]] && prerelease="--prerelease"

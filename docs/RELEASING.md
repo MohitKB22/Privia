@@ -40,7 +40,13 @@ Download the drafts, install at least one, then press **Publish release**. The
 website's download buttons point at the newest *published* release only.
 
 To rebuild an existing tag, run the workflow manually (Actions → Release → Run
-workflow) and enter the tag.
+workflow) and enter the tag. If a release for that tag already exists, the
+workflow replaces its installers and leaves its text and state alone.
+
+**Without a terminal:** on GitHub, open **Releases → Draft a new release**, type
+the new tag (for example `v1.0.1`), target `main`, tick **Set as a pre-release**
+and publish. Creating the tag starts the Release workflow, which attaches the
+installers to that release. When they are there, untick pre-release.
 
 ## Code signing (optional, paid)
 
