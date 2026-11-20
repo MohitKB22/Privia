@@ -279,7 +279,7 @@ def test_directory_grant_and_revoke(api_client, tmp_path: Path) -> None:
     assert str(new_dir) not in removed.json()["allowed_directories"]
 
 
-@pytest.mark.parametrize("path", ["/", "/etc", "/proc"])
+@pytest.mark.parametrize("path", ["/", "/etc", "/proc", "/private/etc", "/var/run"])
 def test_system_directories_cannot_be_allowed(api_client, path: str) -> None:
     response = api_client.post("/api/v1/permissions/directories", json={"path": path})
     assert response.status_code in (400, 403)

@@ -17,6 +17,7 @@ Three outcomes are possible:
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from collections.abc import Iterable, Sequence
@@ -358,13 +359,15 @@ class CommandGuard:
                     details={"pattern": pattern},
                 )
         try:
-            argv = shlex.split(text, comments=False, posix=True)
+            argv = _split(text, backslash_escapes=os.name != "nt")
         except ValueError as exc:
             raise CommandNotAllowedError(f"The command could not be parsed: {exc}") from exc
         if not argv:
             raise CommandNotAllowedError("The command is empty.")
         for token in argv:
-            bad = SHELL_METACHARACTERS.intersection(token)
+            bad = set(SHELL_METACHARACTERS.intersection(token))
+            if os.name == "nt":
+                bad.discard("\\")  # a path separator on Windows; no shell runs
             if bad:
                 raise CommandNotAllowedError(
                     f"Argument {token!r} contains shell metacharacters: {''.join(sorted(bad))}",
@@ -564,6 +567,17 @@ def sanitize_environment(base: dict[str, str] | None = None) -> dict[str, str]:
         ):
             env.pop(key, None)
     return env
+
+
+def _split(text: str, *, backslash_escapes: bool) -> list[str]:
+    """POSIX-style word splitting. On Windows a backslash separates path parts,
+    so it must stay literal instead of escaping the next character."""
+    lexer = shlex.shlex(text, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    if not backslash_escapes:
+        lexer.escape = ""
+    return list(lexer)
 
 
 def _looks_like_path(value: str) -> bool:

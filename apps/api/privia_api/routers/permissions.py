@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from privia_security.paths import forbidden_prefix
 from privia_security.policy import describe_scope
 from privia_shared.enums import AuditAction, PermissionGrantState, Scope
 from privia_shared.errors import BadRequestError, PathNotAllowedError
@@ -101,9 +102,9 @@ async def add_directory(
         raise BadRequestError(f"'{resolved}' is not a folder that exists.")
     if str(resolved) in ("/", str(Path.home().anchor)):
         raise PathNotAllowedError("The filesystem root cannot be allowed.")
-    for forbidden in ("/etc", "/sys", "/proc", "/dev", "/System", "/Library/Keychains"):
-        if str(resolved) == forbidden or str(resolved).startswith(forbidden + "/"):
-            raise PathNotAllowedError(f"'{forbidden}' holds system files and cannot be allowed.")
+    blocked = forbidden_prefix(resolved)
+    if blocked:
+        raise PathNotAllowedError(f"'{blocked}' holds system files and cannot be allowed.")
 
     directories = container.grant_directory(str(resolved))
     container.audit.record(

@@ -80,6 +80,7 @@ FORBIDDEN_PREFIXES: tuple[str, ...] = (
     "/dev",
     "/boot",
     "/var/run",
+    "/run",
     "/private/etc",
     "/private/var/run",
     "/System",
@@ -172,14 +173,14 @@ class PathGuard:
         except (OSError, RuntimeError) as exc:  # RuntimeError = symlink loop
             return PathDecision(expanded, Path("."), False, f"Path could not be resolved: {exc}")
 
-        for prefix in FORBIDDEN_PREFIXES:
-            if _is_within(resolved, Path(prefix)):
-                return PathDecision(
-                    resolved,
-                    Path(prefix),
-                    False,
-                    f"'{prefix}' holds system configuration and is permanently blocked.",
-                )
+        prefix = forbidden_prefix(resolved)
+        if prefix:
+            return PathDecision(
+                resolved,
+                Path(prefix),
+                False,
+                f"'{prefix}' holds system configuration and is permanently blocked.",
+            )
 
         if not self._roots:
             return PathDecision(
@@ -291,6 +292,19 @@ class PathGuard:
         if resolved.suffix.lower() in SENSITIVE_SUFFIXES:
             return f"'{resolved.suffix}' files can hold private keys and are never read."
         return ""
+
+
+def forbidden_prefix(path: Path | str) -> str | None:
+    """Return the permanently blocked prefix that contains ``path``, if any.
+
+    Pass a resolved path: on macOS ``/etc`` resolves to ``/private/etc``, and
+    both forms are listed.
+    """
+    candidate = Path(path)
+    for prefix in FORBIDDEN_PREFIXES:
+        if _is_within(candidate, Path(prefix)):
+            return prefix
+    return None
 
 
 def _is_within(candidate: PurePath, root: PurePath) -> bool:

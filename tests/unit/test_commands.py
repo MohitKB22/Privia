@@ -144,6 +144,19 @@ def test_relative_arguments_are_placed_in_the_working_folder(
     assert not guard.inspect(["cat", "sub/../notes.txt"]).allowed
 
 
+def test_windows_backslashes_survive_parsing() -> None:
+    from privia_security.commands import _split
+
+    command = r'cat C:\Users\me\Documents\notes.txt "C:\My Files\a.txt"'
+    assert _split(command, backslash_escapes=False) == [
+        "cat",
+        r"C:\Users\me\Documents\notes.txt",
+        r"C:\My Files\a.txt",
+    ]
+    # POSIX keeps shell escaping, so the same text means something else there.
+    assert _split(r"echo a\ b", backslash_escapes=True) == ["echo", "a b"]
+
+
 def test_git_revision_ranges_are_not_mistaken_for_paths(
     guard: CommandGuard, workspace: Path
 ) -> None:
