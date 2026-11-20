@@ -73,7 +73,7 @@ class TerminalRunTool(Tool[RunArgs]):
 
     def resources(self, args: RunArgs, ctx: ToolContext) -> tuple[str, ...]:
         try:
-            decision = ctx.providers.command_guard.inspect(args.command)
+            decision = ctx.providers.command_guard.inspect(args.command, cwd=args.cwd)
         except CommandNotAllowedError:
             return (args.cwd,)
         return (decision.program, args.cwd)
@@ -83,7 +83,7 @@ class TerminalRunTool(Tool[RunArgs]):
         # approve a command that would then be refused trains them to click
         # through prompts, which is exactly what a confirmation gate must not do.
         guard = ctx.providers.command_guard
-        decision = guard.inspect(args.command)
+        decision = guard.inspect(args.command, cwd=args.cwd)
         if not decision.allowed:
             raise CommandNotAllowedError(
                 decision.reason, details={"command": args.command, "program": decision.program}
@@ -109,7 +109,7 @@ class TerminalRunTool(Tool[RunArgs]):
 
     async def execute(self, args: RunArgs, ctx: ToolContext) -> ToolResult:
         guard = ctx.providers.command_guard
-        decision = guard.inspect(args.command)
+        decision = guard.inspect(args.command, cwd=args.cwd)
         argv = decision.raise_for_status()
         result = await ctx.providers.terminal.run(
             argv, Path(args.cwd), timeout_seconds=args.timeout_seconds

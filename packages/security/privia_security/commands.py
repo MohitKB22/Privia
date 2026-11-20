@@ -21,7 +21,7 @@ import re
 import shlex
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from privia_shared.domain import CommandInspection
 from privia_shared.errors import CommandNotAllowedError
@@ -374,7 +374,15 @@ class CommandGuard:
 
     # -- authorisation -------------------------------------------------------
 
-    def inspect(self, raw: str | Sequence[str]) -> CommandDecision:
+    def inspect(
+        self, raw: str | Sequence[str], *, cwd: Path | str | None = None
+    ) -> CommandDecision:
+        """Decide whether ``raw`` may run.
+
+        ``cwd`` is the folder the command will run in; relative path arguments
+        are checked against it. Without it, arguments that climb with ``..``
+        cannot be placed and are refused.
+        """
         argv = tuple(raw) if not isinstance(raw, str) else self.parse(raw)
         program_path = argv[0]
         program = Path(program_path).name.lower()
@@ -467,7 +475,7 @@ class CommandGuard:
             or any(f in rule.confirm_flags for f in flags)
         )
 
-        escaping = self._escaping_arguments(args)
+        escaping = self._escaping_arguments(args, cwd)
         if escaping:
             return CommandDecision(
                 argv,
@@ -485,17 +493,31 @@ class CommandGuard:
         )
         return CommandDecision(argv, program, True, requires_confirmation, reason, program)
 
-    def _escaping_arguments(self, args: Sequence[str]) -> str | None:
-        """Reject absolute paths that leave every configured workspace root."""
+    def _escaping_arguments(self, args: Sequence[str], cwd: Path | str | None = None) -> str | None:
+        """Return the first argument that points outside every workspace root.
+
+        Path-like arguments are absolute POSIX or Windows paths (``/x``, ``C:/x``,
+        ``\\\\server\\share``), home paths (``~/x``), anything with a ``..``
+        component, and the value of ``--flag=<path>``. Relative ones are placed
+        against ``cwd``; one that cannot be placed is refused.
+        """
         if not self.workspace_roots:
             return None
         for arg in args:
-            if arg.startswith("-") or not arg:
+            if not arg:
                 continue
-            looks_like_path = arg.startswith(("/", "~")) or arg.startswith("..")
-            if not looks_like_path:
+            value = arg
+            if arg.startswith("-"):
+                if "=" not in arg:
+                    continue
+                value = arg.split("=", 1)[1]
+            if not _looks_like_path(value):
                 continue
-            candidate = Path(arg).expanduser()
+            candidate = Path(value).expanduser()
+            if not candidate.is_absolute():
+                if cwd is None or PureWindowsPath(value).drive:
+                    return arg
+                candidate = Path(cwd).expanduser() / candidate
             try:
                 resolved = candidate.resolve(strict=False)
             except (OSError, RuntimeError):
@@ -542,6 +564,14 @@ def sanitize_environment(base: dict[str, str] | None = None) -> dict[str, str]:
         ):
             env.pop(key, None)
     return env
+
+
+def _looks_like_path(value: str) -> bool:
+    if value.startswith(("/", "\\", "~")):
+        return True
+    if PureWindowsPath(value).drive:  # a drive letter or a UNC share
+        return True
+    return ".." in re.split(r"[\\/]", value)
 
 
 def _within(candidate: Path, root: Path) -> bool:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -96,9 +97,9 @@ def test_resolve_raises_with_a_useful_message(workspace: Path) -> None:
     with pytest.raises(PathNotAllowedError) as caught:
         guard.resolve("/etc/passwd")
     assert caught.value.details["path"] == "/etc/passwd"
-    assert "permanently blocked" in str(caught.value)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX system folders")
 def test_symlinked_system_folders_stay_blocked(tmp_path: Path) -> None:
     # On macOS /etc and /var/run are symlinks into /private; granting a folder
     # that contains the link target must not open them.

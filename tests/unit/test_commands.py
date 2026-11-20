@@ -118,6 +118,38 @@ def test_arguments_cannot_escape_the_workspace(guard: CommandGuard, outside_dir:
     assert "outside" in decision.reason
 
 
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "C:/Windows/System32/config/SAM",
+        "D:secrets.txt",
+        "//server/share/file.txt",
+        "notes/../../../etc/passwd",
+        "--file=/etc/passwd",
+    ],
+)
+def test_windows_paths_climbs_and_flag_values_are_checked(
+    guard: CommandGuard, workspace: Path, argument: str
+) -> None:
+    decision = guard.inspect(["grep", "x", argument], cwd=workspace)
+    assert not decision.allowed
+    assert "outside" in decision.reason
+
+
+def test_relative_arguments_are_placed_in_the_working_folder(
+    guard: CommandGuard, workspace: Path
+) -> None:
+    assert guard.inspect(["cat", "sub/../notes.txt"], cwd=workspace).allowed
+    # Without the working folder a climb cannot be placed, so it is refused.
+    assert not guard.inspect(["cat", "sub/../notes.txt"]).allowed
+
+
+def test_git_revision_ranges_are_not_mistaken_for_paths(
+    guard: CommandGuard, workspace: Path
+) -> None:
+    assert guard.inspect(["git", "log", "main..feature"], cwd=workspace).allowed
+
+
 def test_arguments_inside_the_workspace_are_allowed(guard: CommandGuard, workspace: Path) -> None:
     assert guard.inspect(f"cat {workspace}/notes.txt").allowed
 
