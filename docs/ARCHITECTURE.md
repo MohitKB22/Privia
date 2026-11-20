@@ -21,10 +21,15 @@ That is why the codebase looks the way it does: the interesting code is in
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Desktop client            React + TypeScript + Tauri         │
-│                           12 screens, command palette        │
+│ Desktop shell             Tauri 2 (Rust)                     │
+│                           starts the backend sidecar on a    │
+│                           free port with a per-launch token  │
+├──────────────────────────────────────────────────────────────┤
+│ Desktop client            React + TypeScript + Tailwind      │
+│                           13 screens, global search          │
 └──────────────────────────────┬───────────────────────────────┘
-                               │  HTTP/JSON + SSE, loopback only
+                               │  HTTP/JSON + SSE, loopback only,
+                               │  Bearer token, Host/Origin checks
 ┌──────────────────────────────▼───────────────────────────────┐
 │ API                       FastAPI                            │
 │                           request id · size limit · auth     │

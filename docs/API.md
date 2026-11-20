@@ -3,18 +3,25 @@
 Base URL: `http://127.0.0.1:8756`. Interactive docs at `/docs`, machine-readable
 schema at `/openapi.json`.
 
-## Authentication
+## Authentication and access
 
-None on loopback: the operating system already restricts access to processes on
-your machine, and requiring a token there would only push people to store one in
-a file. Binding anywhere else requires `PRIVIA_API_TOKEN` and start-up **fails**
-without it.
+When `PRIVIA_API_TOKEN` is set, every endpoint except `/health`, `/docs`,
+`/redoc` and `/openapi.json` requires it. The desktop app always sets one: it
+generates a new random token on every launch. For `make dev-api` on loopback the
+token is optional. Binding to a non-loopback address without a token is a
+start-up failure.
 
 ```http
 Authorization: Bearer <PRIVIA_API_TOKEN>
 ```
 
-`/health` and `/api/v1/status` are always reachable.
+Independently of the token, the API answers only to loopback `Host` names
+(`127.0.0.1`, `localhost`, `[::1]`, plus `PRIVIA_ALLOWED_HOSTS`) and refuses
+browser requests from any `Origin` other than the desktop app or the local dev
+server. Both refusals return `403 FORBIDDEN`.
+
+Streams (`/api/v1/chat/stream`, `/api/v1/audit/stream`) are server-sent events.
+Read them with `fetch`, which can send the token; `EventSource` cannot.
 
 ## Errors
 
@@ -142,10 +149,21 @@ and send the message again.
 
 ### `POST /api/v1/chat/stream`
 
-Server-sent events: `start`, `status`, `tool`, `confirmation`, `token`, `done`,
-and `error` if something goes wrong. The stream always closes cleanly.
+Same body as `/chat`. Server-sent events, one JSON object per `data:` line:
 
----
+| `type` | Meaning |
+|---|---|
+| `start` | `session_id`, `request_id` |
+| `status` | the phase now running (`classify`, `plan`, `respond`) |
+| `tool` | a tool is about to run, with the model's justification |
+| `token` | a piece of the reply as the model produces it |
+| `confirmation` | the run paused for approval; carries the full preview |
+| `done` | the complete run: `response` (final text), `status`, `tool_calls`, `tool_results`, `permission_prompt`, `processing_location`, `model_used`, `duration_ms` |
+| `error` | the stream failed; nothing was changed |
+
+Closing the connection stops the run; it is recorded with error code
+`CANCELLED`. Sending `confirm: false` with a `confirmation_id` ends the turn
+without running anything, exactly like `/chat`.
 
 ## Tools
 
@@ -181,7 +199,30 @@ Scopes: `files:read|write|delete`, `notes:read|write`,
 
 ---
 
+## Models
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/v1/models` | Local provider, active model and health, installed Ollama models, cloud status |
+| `PUT` | `/api/v1/models/local` | `{"model": "llama3.2:3b"}`. Must be installed in Ollama. Persisted across restarts. |
+
+## Approvals
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/v1/approvals` | Unanswered, unexpired confirmations with their full preview. Listing never approves; answer in the conversation with `confirmation_id` and `confirm`. |
+
+## Preferences
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/v1/preferences` | `onboarding_completed`, `start_screen`, `sidebar_collapsed`, `reduce_motion` |
+| `PUT` | `/api/v1/preferences` | Partial update. Unknown keys are rejected with 422, so this cannot change security settings. |
+
 ## Memory
+
+`PUT /api/v1/memory/{id}` edits `content`, `tags` or `pinned`; edited content
+passes the same credential checks as a new memory.
 
 - `GET /api/v1/memory?query=` — list or hybrid search.
 - `GET /api/v1/memory/stats`

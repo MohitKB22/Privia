@@ -219,16 +219,46 @@ rm -rf ~/.privia && make migrate
 
 ---
 
+## The desktop app shows "PRIVIA could not start its assistant"
+
+The app starts its own backend. This screen means that process exited or did
+not answer within 45 seconds.
+
+1. Press **Restart assistant**.
+2. Open **Show technical details** for the backend's last log lines.
+3. A port or permissions problem usually names itself there. A database error
+   usually means `~/.privia` is not writable.
+4. **Settings → Troubleshooting → Copy diagnostics** produces a report without
+   file paths, messages or personal data, safe to paste into an issue.
+
+## macOS: "PRIVIA is damaged" or "cannot be opened"
+
+The current builds are not notarized by Apple. Open **System Settings → Privacy
+& Security** and choose **Open Anyway**, or run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/PRIVIA.app
+```
+
+## Windows: SmartScreen warning
+
+The installer is not signed with a Microsoft certificate yet. Choose **More info
+→ Run anyway**, after checking the file against `SHA256SUMS.txt`.
+
 ## Building the desktop application
 
-**"Rust is required"** — install from <https://rustup.rs>. Until then, `make dev`
+**"Rust is required"**: install from <https://rustup.rs>. Until then, `make dev`
 runs the same UI in a browser.
 
-**"Icons are missing"** — `npm run tauri icon path/to/privia-1024.png`. The
-repository ships no binary assets on purpose.
+**Icons**: `make icons` draws them (needs Pillow and the UI dependencies). The
+repository ships no binary app assets on purpose.
 
-**Linux build failures** — install the WebKit development packages listed in
-`.github/workflows/release.yml`.
+**"resource path binaries/privia-backend-... doesn't exist"**: build the
+backend sidecar first with `make sidecar`, or run `make build-desktop`, which
+does every step.
+
+**Linux build failures**: install the WebKitGTK 4.1 development packages
+listed in `.github/workflows/release.yml`.
 
 ---
 
