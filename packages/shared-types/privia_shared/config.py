@@ -49,9 +49,11 @@ class Settings(BaseSettings):
     privia_port: int = Field(default=DEFAULT_PORT, ge=1, le=65535)
     privia_data_dir: str = ""
     #: Origins allowed to call the API from a browser context. ``tauri://localhost``
-    #: is the desktop shell on macOS and Linux, ``https://tauri.localhost`` on Windows.
+    #: is the desktop shell on macOS and Linux; on Windows Tauri 2 serves the app
+    #: from ``http://tauri.localhost`` (``https://`` when ``useHttpsScheme`` is set).
     cors_origins: str = (
-        "http://localhost:5173,http://127.0.0.1:5173,tauri://localhost,https://tauri.localhost"
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "tauri://localhost,http://tauri.localhost,https://tauri.localhost"
     )
     #: Extra ``Host`` header values to accept, comma separated. Loopback names are
     #: always accepted; anything else is refused to defeat DNS rebinding.

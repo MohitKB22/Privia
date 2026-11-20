@@ -92,7 +92,12 @@ def test_simple_request_without_content_type_is_refused(api_client) -> None:
 
 @pytest.mark.parametrize(
     "origin",
-    ["tauri://localhost", "https://tauri.localhost", "http://127.0.0.1:5173"],
+    [
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "http://127.0.0.1:5173",
+    ],
 )
 def test_desktop_and_dev_origins_are_accepted(api_client, origin: str) -> None:
     response = api_client.get("/api/v1/memory", headers={"origin": origin})
