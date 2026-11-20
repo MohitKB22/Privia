@@ -14,6 +14,7 @@ import { savePreferences } from '@/lib/preferences';
 import { appStore, pushToast } from '@/lib/store';
 import { refreshStatus, statusStore } from '@/lib/status';
 import { formatBytes } from '@/lib/format';
+import { Wordmark } from '@/components/Decor';
 import { Dot, Icon, Logo, Spinner, Toggle, type IconName } from '@/components/primitives';
 import { OllamaGuide } from './Settings';
 
@@ -92,9 +93,8 @@ export function Onboarding() {
   return (
     <div className="flex h-screen bg-graphite-950">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-graphite-800 bg-graphite-900 px-5 py-6 md:flex">
-        <div className="flex items-center gap-2.5">
-          <Logo className="h-7 w-7" />
-          <span className="text-sm font-semibold tracking-[0.14em] text-graphite-100">PRIVIA</span>
+        <div data-tauri-drag-region className="titlebar-inset flex items-center">
+          <Wordmark />
         </div>
         <ol className="mt-10 space-y-1">
           {STEPS.map((label, index) => (
