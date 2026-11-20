@@ -96,6 +96,17 @@ def test_resolve_raises_with_a_useful_message(workspace: Path) -> None:
     with pytest.raises(PathNotAllowedError) as caught:
         guard.resolve("/etc/passwd")
     assert caught.value.details["path"] == "/etc/passwd"
+    assert "permanently blocked" in str(caught.value)
+
+
+def test_symlinked_system_folders_stay_blocked(tmp_path: Path) -> None:
+    # On macOS /etc and /var/run are symlinks into /private; granting a folder
+    # that contains the link target must not open them.
+    guard = PathGuard([tmp_path])
+    for target in ("/private/etc/hosts", "/private/var/run/x.pid"):
+        decision = guard.check(target)
+        assert not decision.allowed
+        assert "permanently blocked" in decision.reason
 
 
 def test_size_limit(workspace: Path) -> None:

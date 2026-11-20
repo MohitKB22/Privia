@@ -81,6 +81,7 @@ FORBIDDEN_PREFIXES: tuple[str, ...] = (
     "/boot",
     "/var/run",
     "/private/etc",
+    "/private/var/run",
     "/System",
     "/Library/Keychains",
     "C:\\Windows",
@@ -215,9 +216,19 @@ class PathGuard:
         return PathDecision(resolved, root, True)
 
     def resolve(self, candidate: Path | str, *, must_exist: bool = False) -> Path:
-        """Validate and return the resolved path, raising on refusal."""
+        """Validate and return the resolved path, raising on refusal.
+
+        The error names the path as it was requested; the resolved form is added
+        when a symbolic link changed it (``/etc`` is ``/private/etc`` on macOS).
+        """
         decision = self.check(candidate, must_exist=must_exist)
-        return decision.raise_for_status()
+        if decision.allowed:
+            return decision.path
+        requested = str(candidate).strip()
+        details = {"path": requested}
+        if str(decision.path) != requested:
+            details["resolved"] = str(decision.path)
+        raise PathNotAllowedError(decision.reason, details=details)
 
     def assert_within_root(self, candidate: Path | str, root: Path | str) -> Path:
         """Confirm ``candidate`` stays under ``root`` (used for move/rename)."""
