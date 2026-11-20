@@ -57,7 +57,13 @@
     const preferred = os && document.querySelector(`[data-links="${os}"] a`);
     if (preferred && preferred.getAttribute('href') !== RELEASES) {
       primary.href = preferred.href;
-      primary.textContent = `Download for ${{ macos: 'macOS', windows: 'Windows', linux: 'Linux' }[os]}`;
+      // Browsers do not reliably report a Mac's chip, so say which build this is;
+      // the Intel build is listed in the download section.
+      primary.textContent = {
+        macos: 'Download for Mac (Apple Silicon)',
+        windows: 'Download for Windows',
+        linux: 'Download for Linux',
+      }[os];
     }
   }
 
