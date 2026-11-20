@@ -453,6 +453,9 @@ def test_rejecting_over_the_stream_sends_nothing(api_client) -> None:
 
     done = next(e for e in events if e.get("type") == "done")
     assert done["status"] == "denied"
+    # Same shape as every other done event, so the client can render it.
+    assert done["response"] == "Understood, I have not done it."
+    assert done["tool_results"] == [] and done["permission_prompt"] is None
     assert not [e for e in events if e.get("type") in ("tool", "status")]
     drafts = api_client.post(
         "/api/v1/tools/execute", json={"tool_name": "email.list_drafts", "arguments": {}}
@@ -557,14 +560,10 @@ def test_preferences_round_trip(api_client) -> None:
     assert api_client.get("/api/v1/preferences").json()["onboarding_completed"] is False
     updated = api_client.put(
         "/api/v1/preferences",
-        json={
-            "onboarding_completed": True,
-            "display_name": "  Mohit ",
-            "start_screen": "workspace",
-        },
+        json={"onboarding_completed": True, "start_screen": "workspace"},
     ).json()
     assert updated["onboarding_completed"] is True
-    assert updated["display_name"] == "Mohit"
+    assert "display_name" not in updated
     assert api_client.get("/api/v1/preferences").json()["start_screen"] == "workspace"
 
 
@@ -577,3 +576,42 @@ def test_preferences_cannot_touch_security_settings(api_client) -> None:
     assert (
         api_client.put("/api/v1/preferences", json={"start_screen": "terminal"}).status_code == 422
     )
+
+
+# ------------------------------------------------------------ pending approvals
+
+
+def test_pending_approvals_are_listed_until_answered(api_client) -> None:
+    assert api_client.get("/api/v1/approvals").json()["count"] == 0
+    grant(api_client, "email:draft")
+    grant(api_client, "email:send")
+    session_id = api_client.post("/api/v1/sessions", json={"title": "t"}).json()["session_id"]
+    api_client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Draft an email to rahul@example.com saying hi.",
+            "session_id": session_id,
+        },
+    )
+    paused = api_client.post(
+        "/api/v1/chat", json={"message": "Send the email.", "session_id": session_id}
+    ).json()
+    assert paused["status"] == "awaiting_confirmation"
+
+    listed = api_client.get("/api/v1/approvals").json()
+    assert listed["count"] == 1
+    item = listed["approvals"][0]
+    assert item["session_id"] == session_id
+    assert item["tool_name"] == "email.send"
+    assert item["confirmation"]["id"] == paused["pending_confirmation"]["id"]
+
+    api_client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Send the email.",
+            "session_id": session_id,
+            "confirmation_id": item["id"],
+            "confirm": False,
+        },
+    )
+    assert api_client.get("/api/v1/approvals").json()["count"] == 0

@@ -89,6 +89,8 @@ export interface PendingPrompt {
   text: string;
   send: boolean;
   nonce: number;
+  /** Open the file picker in the composer. */
+  attach?: boolean;
 }
 
 export interface AppState {
@@ -121,13 +123,18 @@ export const navigate = (screen: Screen) => appStore.setState({ screen, paletteO
 /** Open the AI Workspace with `text` in the composer, optionally sending it. */
 export function askPrivia(
   text: string,
-  options: { send?: boolean; newConversation?: boolean } = {},
+  options: { send?: boolean; newConversation?: boolean; attach?: boolean } = {},
 ) {
   appStore.setState((state) => ({
     screen: 'workspace',
     paletteOpen: false,
     sessionId: options.newConversation ? null : state.sessionId,
-    pendingPrompt: { text, send: options.send ?? true, nonce: Date.now() },
+    pendingPrompt: {
+      text,
+      send: options.send ?? true,
+      nonce: Date.now(),
+      attach: options.attach ?? false,
+    },
   }));
 }
 

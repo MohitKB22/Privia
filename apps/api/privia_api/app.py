@@ -14,6 +14,7 @@ from .container import Container, build_container
 from .errors import install_error_handlers
 from .middleware import install_middleware
 from .routers import (
+    approvals,
     audit,
     chat,
     files,
@@ -93,6 +94,7 @@ def create_app(
     app.include_router(notes.router)
     app.include_router(files.router)
     app.include_router(audit.router)
+    app.include_router(approvals.router)
     app.include_router(privacy.router)
     app.include_router(integrations.router)
     app.include_router(voice.router)

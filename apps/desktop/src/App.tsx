@@ -4,6 +4,7 @@ import { loadPreferences, preferencesStore } from '@/lib/preferences';
 import { useStatusPolling } from '@/lib/status';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { BackendGate } from '@/components/BackendGate';
+import { Beams } from '@/components/Decor';
 import { Sidebar } from '@/components/Sidebar';
 import { Header } from '@/components/Header';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -106,9 +107,10 @@ function Shell() {
   const Screen = SCREENS[screen] ?? Home;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-graphite-950 text-graphite-100">
+    <div className="relative flex h-screen overflow-hidden bg-graphite-950 text-graphite-100">
+      <Beams className="absolute left-0 top-0 z-0 h-[620px] w-[920px] opacity-90" />
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <Header />
         {!online ? (
           <div

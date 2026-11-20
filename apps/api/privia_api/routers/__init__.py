@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import (
+    approvals,
     audit,
     chat,
     files,
@@ -20,6 +21,7 @@ from . import (
 )
 
 __all__ = [
+    "approvals",
     "audit",
     "chat",
     "files",

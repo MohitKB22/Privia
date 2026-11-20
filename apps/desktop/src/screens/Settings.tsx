@@ -64,18 +64,6 @@ export function Settings() {
             label="Compact sidebar"
             description="Show only icons in the navigation."
           />
-          <label className="flex items-center justify-between gap-6 py-3">
-            <span>
-              <span className="block text-sm text-graphite-200">Your name</span>
-              <span className="mt-0.5 block text-sm text-graphite-500">
-                Used only for the greeting on Home.
-              </span>
-            </span>
-            <NameField
-              initial={prefs.display_name}
-              onSave={(display_name) => save({ display_name })}
-            />
-          </label>
         </div>
       </Section>
 
@@ -182,21 +170,6 @@ export function Settings() {
       <Troubleshooting />
       <ToolCatalogue />
     </Page>
-  );
-}
-
-function NameField({ initial, onSave }: { initial: string; onSave: (value: string) => void }) {
-  const [value, setValue] = useState(initial);
-  return (
-    <input
-      className="field w-48"
-      value={value}
-      maxLength={40}
-      placeholder="Optional"
-      aria-label="Your name"
-      onChange={(event) => setValue(event.target.value)}
-      onBlur={() => value.trim() !== initial && onSave(value.trim())}
-    />
   );
 }
 

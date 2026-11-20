@@ -1,4 +1,4 @@
-"""Interface preferences: onboarding state, display name, start screen, layout.
+"""Interface preferences: onboarding state, start screen, layout.
 
 These are stored in the local database next to the other user settings. Only
 the keys below are accepted, each with a fixed type, so this endpoint cannot be
@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from ..deps import ContainerDep
 
@@ -23,7 +23,6 @@ class Preferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     onboarding_completed: bool = False
-    display_name: str = Field(default="", max_length=40)
     start_screen: Literal["home", "workspace"] = "home"
     sidebar_collapsed: bool = False
     reduce_motion: bool = False
@@ -33,7 +32,6 @@ class PreferencesPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     onboarding_completed: bool | None = None
-    display_name: str | None = Field(default=None, max_length=40)
     start_screen: Literal["home", "workspace"] | None = None
     sidebar_collapsed: bool | None = None
     reduce_motion: bool | None = None

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
 import { api, subscribeToActivity } from '@/lib/api';
+import { isAwaitingApproval } from '@/lib/activity';
 import type { AuditEvent } from '@/lib/types';
 import { OUTCOME_STYLES, formatRelative, shortenPath } from '@/lib/format';
 import { Chip, EmptyState, ErrorState, Icon, SkeletonList } from '@/components/primitives';
@@ -44,7 +45,10 @@ export function Activity() {
       return true;
     });
     if (filter === '!') {
-      return unique.filter((event) => event.outcome === 'failure' || event.outcome === 'denied');
+      return unique.filter(
+        (event) =>
+          (event.outcome === 'failure' && !isAwaitingApproval(event)) || event.outcome === 'denied',
+      );
     }
     return filter ? unique.filter((event) => event.action.startsWith(filter)) : unique;
   }, [data, live, filter]);

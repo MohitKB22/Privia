@@ -75,6 +75,19 @@
 }
 
 @layer components {
+  /* The selected navigation item: a filled, muted red pill. */
+  .nav-active {
+    background: linear-gradient(90deg, #922f34 0%, #722629 100%);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+      0 10px 24px -14px rgba(168, 50, 54, 0.9);
+  }
+
+  /* On macOS the window's traffic lights sit over the sidebar. */
+  html[data-platform='macos'] .titlebar-inset {
+    padding-top: 22px;
+  }
+
   /* Surfaces */
   .panel {
     @apply rounded-xl border border-graphite-700/70 bg-graphite-850 shadow-panel;

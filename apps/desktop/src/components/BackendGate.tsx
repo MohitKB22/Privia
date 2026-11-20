@@ -37,7 +37,8 @@ export function BackendGate({ children }: { children: ReactNode }) {
     const check = async () => {
       if (cancelled) return;
       try {
-        await getConnection();
+        const connection = await getConnection();
+        if (connection.desktop) document.documentElement.dataset.platform = connection.platform;
         await api.health();
         if (!cancelled) setState({ phase: 'ready' });
         return;

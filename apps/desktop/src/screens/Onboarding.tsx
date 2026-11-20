@@ -74,15 +74,11 @@ const PRINCIPLES: { icon: IconName; title: string; text: string }[] = [
 
 export function Onboarding() {
   const [step, setStep] = useState(0);
-  const [name, setName] = useState('');
   const last = STEPS.length - 1;
 
   const finish = async () => {
     try {
-      const prefs = await savePreferences({
-        onboarding_completed: true,
-        display_name: name.trim(),
-      });
+      const prefs = await savePreferences({ onboarding_completed: true });
       appStore.setState({ screen: prefs.start_screen === 'workspace' ? 'workspace' : 'home' });
     } catch (caught) {
       pushToast({
@@ -123,7 +119,7 @@ export function Onboarding() {
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-2xl px-8 py-14 animate-fade-in" key={step}>
-            {step === 0 ? <Welcome name={name} setName={setName} /> : null}
+            {step === 0 ? <Welcome /> : null}
             {step === 1 ? <SystemCheck /> : null}
             {step === 2 ? <LocalModel /> : null}
             {step === 3 ? <Provider /> : null}
@@ -167,7 +163,7 @@ function Heading({ title, text }: { title: string; text: string }) {
   );
 }
 
-function Welcome({ name, setName }: { name: string; setName: (value: string) => void }) {
+function Welcome() {
   return (
     <>
       <Logo className="mb-6 h-12 w-12" />
@@ -186,18 +182,6 @@ function Welcome({ name, setName }: { name: string; setName: (value: string) => 
           </li>
         ))}
       </ul>
-      <label className="mt-8 block">
-        <span className="text-sm text-graphite-300">
-          What should PRIVIA call you? <span className="text-graphite-600">(optional)</span>
-        </span>
-        <input
-          className="field mt-2 max-w-xs"
-          value={name}
-          maxLength={40}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Your first name"
-        />
-      </label>
     </>
   );
 }

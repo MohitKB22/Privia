@@ -71,6 +71,7 @@ export function Workspace() {
   const [speak, setSpeak] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [attaching, setAttaching] = useState(false);
 
   const voice = useVoice();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -105,8 +106,19 @@ export function Workspace() {
     setLoadingSession(true);
     api
       .session(sessionId)
-      .then((detail) => {
-        if (!cancelled) setMessages(fromHistory(detail.messages));
+      .then(async (detail) => {
+        if (cancelled) return;
+        const history = fromHistory(detail.messages);
+        setMessages(history);
+        // An action in this conversation may still be waiting for approval
+        // (for example, opened from "Pending Approvals" on Home). Show it again.
+        const pending = await api.approvals().catch(() => null);
+        const waiting = pending?.approvals.find((a) => a.session_id === sessionId);
+        const lastUser = [...history].reverse().find((m) => m.role === 'user');
+        if (!cancelled && waiting && lastUser) {
+          setConfirmation(waiting.confirmation);
+          setConfirmationPrompt(lastUser.content);
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -201,9 +213,9 @@ export function Workspace() {
             update(replyId, { content: event.message, failed: true, streaming: false });
             break;
           case 'done':
-            finalText = event.response;
+            finalText = event.response ?? streamed;
             update(replyId, {
-              content: event.response,
+              content: finalText,
               streaming: false,
               activity: undefined,
               runId: event.run_id,
@@ -286,6 +298,7 @@ export function Workspace() {
     if (pendingPrompt.send) void send(pendingPrompt.text);
     else {
       setInput(pendingPrompt.text);
+      if (pendingPrompt.attach) setAttaching(true);
       inputRef.current?.focus();
     }
   }, [pendingPrompt, send]);
@@ -419,6 +432,8 @@ export function Workspace() {
           voice={voice}
           onMicUp={() => void handleMicUp()}
           location={prefer}
+          attaching={attaching}
+          setAttaching={setAttaching}
         />
       </div>
 
@@ -958,6 +973,8 @@ function Composer({
   voice,
   onMicUp,
   location,
+  attaching,
+  setAttaching,
 }: {
   input: string;
   setInput: (value: string) => void;
@@ -970,9 +987,9 @@ function Composer({
   voice: ReturnType<typeof useVoice>;
   onMicUp: () => void;
   location: Prefer;
+  attaching: boolean;
+  setAttaching: (open: boolean | ((open: boolean) => boolean)) => void;
 }) {
-  const [attaching, setAttaching] = useState(false);
-
   useEffect(() => {
     const element = inputRef.current;
     if (!element) return;
@@ -997,11 +1014,11 @@ function Composer({
           </div>
         ) : null}
 
-        <div className="relative rounded-2xl border border-graphite-700 bg-graphite-900 transition-colors focus-within:border-graphite-600">
+        <div className="relative rounded-2xl border border-white/[0.08] bg-graphite-850/80 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)] backdrop-blur transition-colors focus-within:border-white/[0.16]">
           {attachment ? (
-            <div className="flex px-3 pt-3">
+            <div className="flex px-4 pt-3">
               <span
-                className="flex items-center gap-1.5 rounded-lg border border-graphite-700 bg-graphite-850 px-2 py-1 text-xs text-graphite-300"
+                className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-graphite-800 px-2 py-1 text-xs text-graphite-300"
                 title={attachment}
               >
                 <Icon name="file" className="h-3.5 w-3.5 text-graphite-500" />
@@ -1018,32 +1035,26 @@ function Composer({
             </div>
           ) : null}
 
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                if (!busy) onSend();
-              }
-            }}
-            rows={1}
-            placeholder="Ask PRIVIA anything..."
-            aria-label="Message"
-            className="block max-h-[200px] w-full resize-none bg-transparent px-4 pb-2 pt-3.5 text-[0.9rem] text-graphite-100 placeholder:text-graphite-500 focus:outline-none"
-          />
-
-          <div className="flex items-center gap-1 px-2.5 pb-2.5">
-            <button
-              type="button"
-              className="btn-icon"
-              onClick={() => setAttaching((v) => !v)}
-              aria-label="Attach a file"
-              title="Attach a file from your allowed folders"
-            >
-              <Icon name="paperclip" />
-            </button>
+          <div className="flex items-end gap-3 p-3 pl-3.5">
+            <span className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-graphite-800">
+              <Icon name="workspace" className="h-[18px] w-[18px] text-white" />
+            </span>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  if (!busy) onSend();
+                }
+              }}
+              rows={1}
+              placeholder="Ask PRIVIA anything..."
+              aria-label="Message"
+              className="mb-1.5 block max-h-[200px] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[0.95rem] text-graphite-100 placeholder:text-graphite-500 focus:outline-none"
+            />
+            {voice.state === 'recording' ? <Waveform level={voice.level} active /> : null}
             {voice.state !== 'unsupported' ? (
               <button
                 type="button"
@@ -1055,30 +1066,35 @@ function Composer({
                 onPointerLeave={() => {
                   if (voice.state === 'recording') onMicUp();
                 }}
-                className={`btn-icon ${voice.state === 'recording' ? 'bg-brand-soft text-graphite-100' : ''}`}
+                className={`btn-icon mb-1 h-9 w-9 ${voice.state === 'recording' ? 'bg-brand-soft text-white' : ''}`}
                 title="Hold to talk"
               >
-                {voice.state === 'transcribing' ? <Spinner /> : <Icon name="mic" />}
+                {voice.state === 'transcribing' ? (
+                  <Spinner />
+                ) : (
+                  <Icon name="mic" className="h-[18px] w-[18px]" />
+                )}
               </button>
             ) : null}
-            {voice.state === 'recording' ? <Waveform level={voice.level} active /> : null}
-
-            <span className="ml-auto mr-2 hidden items-center gap-1 text-2xs text-graphite-600 sm:flex">
-              <Icon name={location === 'cloud' ? 'cloud' : 'lock'} className="h-3 w-3" />
-              {location === 'cloud'
-                ? 'Will be sent to your cloud provider'
-                : 'Stays on this computer'}
-            </span>
-
+            <button
+              type="button"
+              className="btn-icon mb-1 h-9 w-9"
+              onClick={() => setAttaching((open) => !open)}
+              aria-label="Attach a file"
+              title="Attach a file from your allowed folders"
+            >
+              <Icon name="paperclip" className="h-[18px] w-[18px]" />
+            </button>
+            <span className="mb-2.5 h-6 w-px bg-white/[0.08]" aria-hidden />
             {busy ? (
               <button
                 type="button"
                 onClick={onStop}
                 aria-label="Stop generating"
                 title="Stop"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-graphite-600 text-graphite-100 hover:bg-graphite-800"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 text-white hover:bg-white/[0.06]"
               >
-                <Icon name="stop" className="h-3 w-3 fill-current" />
+                <Icon name="stop" className="h-3.5 w-3.5 fill-current" />
               </button>
             ) : (
               <button
@@ -1087,9 +1103,9 @@ function Composer({
                 disabled={!input.trim()}
                 aria-label="Send"
                 title="Send"
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-graphite-100 transition-colors hover:bg-brand-hover disabled:bg-graphite-800 disabled:text-graphite-500"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-[0_8px_24px_-10px_rgba(168,50,54,0.9)] transition-colors hover:bg-brand-hover disabled:bg-brand-muted disabled:text-white/60 disabled:shadow-none"
               >
-                <Icon name="send" className="h-4 w-4" />
+                <Icon name="send" className="h-[18px] w-[18px]" />
               </button>
             )}
           </div>
@@ -1105,9 +1121,10 @@ function Composer({
             />
           ) : null}
         </div>
-        <p className="mt-2 text-center text-2xs text-graphite-600">
-          Enter to send · Shift+Enter for a new line · PRIVIA can make mistakes, so check important
-          results.
+        <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-2xs text-graphite-600">
+          <Icon name={location === 'cloud' ? 'cloud' : 'lock'} className="h-3 w-3" />
+          {location === 'cloud' ? 'Will be sent to your cloud provider' : 'Stays on this computer'}
+          <span>· Enter to send · PRIVIA can make mistakes, so check important results.</span>
         </p>
       </div>
     </div>

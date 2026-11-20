@@ -1,17 +1,20 @@
 import { useMemo, useState } from 'react';
 import { useAsync } from '@/hooks/useAsync';
+import { useVoice } from '@/hooks/useVoice';
+import { useGreeting } from '@/hooks/useGreeting';
 import { api } from '@/lib/api';
-import { appStore, askPrivia, navigate, type Screen } from '@/lib/store';
-import { preferencesStore } from '@/lib/preferences';
+import { describeActivity, type ActivityKind } from '@/lib/activity';
+import { appStore, askPrivia, navigate } from '@/lib/store';
 import { statusStore } from '@/lib/status';
 import type { AuditEvent, Session } from '@/lib/types';
-import { basename, formatRelative, greeting, shortenPath, titleCase } from '@/lib/format';
-import { Dot, Icon, SkeletonList, type IconName } from '@/components/primitives';
+import { basename, formatRelative, shortenPath } from '@/lib/format';
+import { Halo } from '@/components/Decor';
+import { Icon, SkeletonList, Spinner, type IconName } from '@/components/primitives';
 
 const QUICK_ACTIONS: { label: string; icon: IconName; run: () => void }[] = [
   {
     label: 'Start a conversation',
-    icon: 'workspace',
+    icon: 'chat',
     run: () => askPrivia('', { send: false, newConversation: true }),
   },
   { label: 'Search my files', icon: 'search', run: () => navigate('files') },
@@ -25,27 +28,38 @@ const QUICK_ACTIONS: { label: string; icon: IconName; run: () => void }[] = [
   { label: 'Open privacy center', icon: 'shield', run: () => navigate('privacy') },
 ];
 
+const KIND_ICON: Record<ActivityKind, IconName> = {
+  file: 'file',
+  note: 'note',
+  memory: 'brain',
+  email: 'mail',
+  calendar: 'calendar',
+  web: 'globe',
+  terminal: 'terminal',
+  shield: 'shield',
+  chat: 'search',
+  settings: 'settings',
+};
+
 /** File paths PRIVIA touched, newest first, from the audit log. */
-function recentFiles(events: AuditEvent[]): { path: string; when: string; tool: string }[] {
+function recentFiles(events: AuditEvent[]): { path: string; when: string }[] {
   const seen = new Set<string>();
-  const files: { path: string; when: string; tool: string }[] = [];
+  const files: { path: string; when: string }[] = [];
   for (const event of events) {
     if (!event.tool_name?.includes('files.') || !event.target || event.outcome !== 'success')
       continue;
     if (!/[\\/]/.test(event.target) || seen.has(event.target)) continue;
     seen.add(event.target);
-    files.push({ path: event.target, when: event.timestamp, tool: event.tool_name });
+    files.push({ path: event.target, when: event.timestamp });
     if (files.length >= 5) break;
   }
   return files;
 }
 
 export function Home() {
-  const name = preferencesStore.useStore((state) => state.values.display_name);
-  const status = statusStore.useStore((state) => state.status);
+  const hello = useGreeting();
   const sessions = useAsync(() => api.sessions(), []);
   const activity = useAsync(() => api.audit({ limit: 200 }), []);
-  const [prompt, setPrompt] = useState('');
 
   const conversations = useMemo(
     () =>
@@ -55,106 +69,53 @@ export function Home() {
     [sessions.data],
   );
   const files = useMemo(() => recentFiles(activity.data?.events ?? []), [activity.data]);
-  const events = (activity.data?.events ?? []).slice(0, 6);
-
-  const local = status?.models.local;
-  const cloudOn = Boolean(status?.privacy.data_leaving_device);
-
-  const submit = () => {
-    if (!prompt.trim()) return;
-    askPrivia(prompt.trim(), { newConversation: true });
-  };
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-8 pb-10 pt-12">
-        <p className="text-sm text-graphite-500">
-          {greeting()}
-          {name ? `, ${name}` : ''}
-        </p>
-        <h2 className="mt-1 text-[1.9rem] font-semibold leading-tight tracking-tight text-graphite-100">
-          Your space. Your intelligence.
-        </h2>
-        <p className="mt-2 text-[0.95rem] text-graphite-400">
-          Everything you need, with your own private AI assistant.
-        </p>
+      <div className="mx-auto max-w-[1180px] px-10 pb-12 pt-12">
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0">
+            <section className="relative">
+              <Halo className="absolute -right-24 -top-20 hidden h-64 w-[22rem] opacity-90 lg:block" />
+              <p className="text-[0.7rem] font-medium uppercase tracking-[0.22em] text-graphite-500">
+                Your space. Your intelligence.
+              </p>
+              <h2 className="relative mt-3 text-[3.4rem] font-semibold leading-[1.05] tracking-[-0.035em] text-white">
+                {hello}
+              </h2>
+              <p className="relative mt-3 text-[1.15rem] text-graphite-400">
+                <span className="text-graphite-100">Hey, I&apos;m PRIVIA.</span> Your private
+                workspace is ready.
+              </p>
+            </section>
 
-        <form
-          className="mt-7 flex items-center gap-2 rounded-2xl border border-graphite-700 bg-graphite-900 p-2 pl-4 transition-colors focus-within:border-graphite-600"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <Icon name="workspace" className="h-4 w-4 shrink-0 text-graphite-500" />
-          <input
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Ask PRIVIA anything..."
-            aria-label="Ask PRIVIA"
-            className="h-9 flex-1 bg-transparent text-[0.95rem] text-graphite-100 placeholder:text-graphite-500 focus:outline-none"
-          />
-          <button type="submit" disabled={!prompt.trim()} className="btn-primary h-9 px-4">
-            Ask
-            <Icon name="arrowRight" className="h-4 w-4" />
-          </button>
-        </form>
+            <PromptCard />
 
-        <div className="mt-4 flex flex-wrap gap-2">
+            <StatusCards />
+          </div>
+
+          <RecentActivity events={activity.data?.events ?? []} loading={activity.loading} />
+        </div>
+
+        <div className="mt-10 flex flex-wrap gap-2">
           {QUICK_ACTIONS.map((action) => (
             <button
               key={action.label}
               type="button"
               onClick={action.run}
-              className="flex items-center gap-2 rounded-lg border border-graphite-800 bg-graphite-900 px-3 py-1.5 text-sm text-graphite-300 transition-colors hover:border-graphite-700 hover:text-graphite-100"
+              className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-graphite-850/70 px-3.5 py-2 text-sm text-graphite-300 transition-colors hover:border-graphite-700 hover:text-white"
             >
-              <Icon name={action.icon} className="h-3.5 w-3.5 text-graphite-500" />
+              <Icon name={action.icon} className="h-4 w-4 text-graphite-500" />
               {action.label}
             </button>
           ))}
         </div>
 
-        <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <StatusCard
-            icon="cpu"
-            title="Assistant"
-            tone={!status ? 'idle' : local?.available ? 'ok' : 'warn'}
-            value={!status ? 'Connecting…' : local?.available ? local.model : 'Offline planner'}
-            detail={
-              !status
-                ? ''
-                : local?.available
-                  ? 'Local model through Ollama'
-                  : 'No local model yet. Basic tasks still work offline.'
-            }
-            action={{ label: local?.available ? 'Models' : 'Set up a model', screen: 'settings' }}
-          />
-          <StatusCard
-            icon={cloudOn ? 'cloud' : 'lock'}
-            title="Privacy"
-            tone={cloudOn ? 'warn' : 'ok'}
-            value={cloudOn ? 'Cloud processing on' : 'Local only'}
-            detail={
-              cloudOn
-                ? `Some requests can go to ${status?.models.cloud?.provider ?? 'your cloud provider'}.`
-                : 'Nothing leaves this computer. No telemetry.'
-            }
-            action={{ label: 'Privacy Center', screen: 'privacy' }}
-          />
-          <StatusCard
-            icon="shield"
-            title="Access"
-            tone={status && status.warnings.length === 0 ? 'ok' : 'idle'}
-            value={`${status?.tools ?? '…'} tools, permission-gated`}
-            detail="Consequential actions always wait for your approval."
-            action={{ label: 'Permissions', screen: 'privacy' }}
-          />
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Panel
             title="Recent conversations"
-            action={{ label: 'Open workspace', screen: 'workspace' }}
+            action="Open AI Workspace"
+            onAction={() => navigate('workspace')}
           >
             {sessions.loading ? (
               <SkeletonList rows={3} />
@@ -169,9 +130,9 @@ export function Home() {
                       onClick={() =>
                         appStore.setState({ sessionId: session.id, screen: 'workspace' })
                       }
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-graphite-800"
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/[0.03]"
                     >
-                      <Icon name="chat" className="h-3.5 w-3.5 shrink-0 text-graphite-500" />
+                      <Icon name="chat" className="h-4 w-4 shrink-0 text-graphite-500" />
                       <span className="min-w-0 flex-1 truncate text-sm text-graphite-200">
                         {session.title}
                       </span>
@@ -185,7 +146,11 @@ export function Home() {
             )}
           </Panel>
 
-          <Panel title="Recently accessed files" action={{ label: 'My Files', screen: 'files' }}>
+          <Panel
+            title="Recently accessed files"
+            action="My Files"
+            onAction={() => navigate('files')}
+          >
             {activity.loading ? (
               <SkeletonList rows={3} />
             ) : files.length === 0 ? (
@@ -195,54 +160,19 @@ export function Home() {
                 {files.map((file) => (
                   <li
                     key={file.path}
-                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5"
+                    className="flex items-center gap-3 rounded-lg px-2 py-2"
                     title={file.path}
                   >
-                    <Icon name="file" className="h-3.5 w-3.5 shrink-0 text-graphite-500" />
+                    <Icon name="file" className="h-4 w-4 shrink-0 text-graphite-500" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-graphite-200">
                         {basename(file.path)}
                       </span>
                       <span className="block truncate text-2xs text-graphite-600">
-                        {shortenPath(file.path, 40)}
+                        {shortenPath(file.path, 48)}
                       </span>
                     </span>
                     <span className="text-2xs text-graphite-600">{formatRelative(file.when)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          <Panel title="Recent activity" action={{ label: 'Activity', screen: 'activity' }}>
-            {activity.loading ? (
-              <SkeletonList rows={3} />
-            ) : events.length === 0 ? (
-              <Empty text="Every action and permission decision is recorded here." />
-            ) : (
-              <ul className="space-y-0.5">
-                {events.map((event) => (
-                  <li key={event.id} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                    <Dot
-                      tone={
-                        event.outcome === 'success'
-                          ? 'ok'
-                          : event.outcome === 'failure'
-                            ? 'bad'
-                            : event.outcome === 'denied'
-                              ? 'warn'
-                              : 'idle'
-                      }
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm text-graphite-300">
-                      {titleCase(event.action)}
-                      {event.tool_name ? (
-                        <span className="text-graphite-500"> · {event.tool_name}</span>
-                      ) : null}
-                    </span>
-                    <span className="text-2xs text-graphite-600">
-                      {formatRelative(event.timestamp)}
-                    </span>
                   </li>
                 ))}
               </ul>
@@ -254,63 +184,238 @@ export function Home() {
   );
 }
 
+function PromptCard() {
+  const [prompt, setPrompt] = useState('');
+  const voice = useVoice();
+
+  const submit = () => {
+    if (prompt.trim()) askPrivia(prompt.trim(), { newConversation: true });
+  };
+  const stopListening = async () => {
+    appStore.setState({ micActive: false });
+    const text = await voice.stop();
+    if (text) askPrivia(text, { newConversation: true });
+  };
+
+  return (
+    <form
+      className="mt-9 flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-graphite-850/80 p-3 pl-3.5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)] backdrop-blur transition-colors focus-within:border-white/[0.16]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-graphite-800">
+        <Icon name="workspace" className="h-5 w-5 text-white" />
+      </span>
+      <input
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+        placeholder="Ask Privia anything..."
+        aria-label="Ask PRIVIA"
+        className="h-11 min-w-0 flex-1 bg-transparent text-[1.05rem] text-graphite-100 placeholder:text-graphite-500 focus:outline-none"
+      />
+      {voice.state !== 'unsupported' ? (
+        <button
+          type="button"
+          className={`btn-icon h-9 w-9 ${voice.state === 'recording' ? 'bg-brand-soft text-white' : ''}`}
+          aria-label="Hold to talk"
+          title="Hold to talk"
+          onPointerDown={() => {
+            appStore.setState({ micActive: true });
+            void voice.start();
+          }}
+          onPointerUp={() => void stopListening()}
+          onPointerLeave={() => {
+            if (voice.state === 'recording') void stopListening();
+          }}
+        >
+          {voice.state === 'transcribing' ? (
+            <Spinner />
+          ) : (
+            <Icon name="mic" className="h-[18px] w-[18px]" />
+          )}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="btn-icon h-9 w-9"
+        aria-label="Attach a file"
+        title="Attach a file from your allowed folders"
+        onClick={() => askPrivia(prompt, { send: false, newConversation: true, attach: true })}
+      >
+        <Icon name="paperclip" className="h-[18px] w-[18px]" />
+      </button>
+      <span className="h-7 w-px bg-white/[0.08]" aria-hidden />
+      <button
+        type="submit"
+        disabled={!prompt.trim()}
+        aria-label="Send"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-[0_8px_24px_-10px_rgba(168,50,54,0.9)] transition-colors hover:bg-brand-hover disabled:bg-brand-muted disabled:text-white/60 disabled:shadow-none"
+      >
+        <Icon name="send" className="h-5 w-5" />
+      </button>
+    </form>
+  );
+}
+
+function StatusCards() {
+  const memory = useAsync(() => api.memories(''), []);
+  const integrations = useAsync(() => api.integrations(), []);
+  const approvals = useAsync(() => api.approvals(), []);
+  const status = statusStore.useStore((state) => state.status);
+
+  const memoryOn = memory.data?.enabled ?? status?.privacy.memory_enabled ?? true;
+  const ready = (integrations.data?.integrations ?? []).filter((i) => i.status === 'ready').length;
+  const pending = approvals.data?.approvals ?? [];
+
+  const openApproval = () => {
+    const newest = pending[0];
+    if (newest) appStore.setState({ sessionId: newest.session_id, screen: 'workspace' });
+    else navigate('activity');
+  };
+
+  return (
+    <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <StatusCard
+        icon="database"
+        title="Local Memory"
+        detail={
+          memory.data ? (memoryOn ? `On-device · ${memory.data.count} saved` : 'Switched off') : '…'
+        }
+        dot={memoryOn ? 'bg-ok' : 'bg-graphite-600'}
+        onClick={() => navigate('memory')}
+      />
+      <StatusCard
+        icon="link"
+        title="Connected Sources"
+        detail={integrations.data ? `${ready} available` : '…'}
+        dot={ready > 0 ? 'bg-ok' : 'bg-graphite-600'}
+        onClick={() => navigate('integrations')}
+      />
+      <StatusCard
+        icon="shield"
+        title="Pending Approvals"
+        detail={
+          approvals.data
+            ? pending.length
+              ? `${pending.length} ${pending.length === 1 ? 'request' : 'requests'}`
+              : 'Nothing waiting'
+            : '…'
+        }
+        dot={pending.length ? 'bg-caution' : 'bg-ok'}
+        onClick={openApproval}
+      />
+    </div>
+  );
+}
+
 function StatusCard({
   icon,
   title,
-  value,
   detail,
-  tone,
-  action,
+  dot,
+  onClick,
 }: {
   icon: IconName;
   title: string;
-  value: string;
   detail: string;
-  tone: 'ok' | 'warn' | 'idle';
-  action: { label: string; screen: Screen };
+  dot: string;
+  onClick: () => void;
 }) {
   return (
-    <div className="panel flex flex-col p-4">
-      <div className="flex items-center gap-2">
-        <Icon name={icon} className="h-3.5 w-3.5 text-graphite-500" />
-        <span className="label">{title}</span>
-        <span className="ml-auto">
-          <Dot tone={tone} />
-        </span>
-      </div>
-      <p className="mt-3 truncate text-sm font-medium text-graphite-100">{value}</p>
-      <p className="mt-1 text-xs text-graphite-500">{detail}</p>
-      <button
-        type="button"
-        onClick={() => navigate(action.screen)}
-        className="mt-3 flex items-center gap-1 self-start text-xs text-graphite-400 hover:text-graphite-100"
-      >
-        {action.label}
-        <Icon name="chevronRight" className="h-3 w-3" />
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative rounded-2xl border border-white/[0.07] bg-graphite-850/80 p-5 text-left transition-colors hover:border-white/[0.14]"
+    >
+      <span className={`absolute right-5 top-5 h-2 w-2 rounded-full ${dot}`} aria-hidden />
+      <Icon name={icon} className="h-6 w-6 text-graphite-200" strokeWidth={1.6} />
+      <span className="mt-4 block text-[0.95rem] font-semibold text-white">{title}</span>
+      <span className="mt-1 block text-sm text-graphite-400">{detail}</span>
+    </button>
+  );
+}
+
+function RecentActivity({ events, loading }: { events: AuditEvent[]; loading: boolean }) {
+  const items = useMemo(() => describeActivity(events, 4), [events]);
+  return (
+    <aside className="self-start rounded-2xl border border-white/[0.07] bg-graphite-850/80 p-5 xl:mt-28">
+      <header className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+        <h3 className="text-[0.95rem] font-semibold text-white">Recent Activity</h3>
+        <button
+          type="button"
+          onClick={() => navigate('activity')}
+          className="flex items-center gap-1 text-xs text-graphite-300 hover:text-white"
+        >
+          View All
+          <Icon name="arrowRight" className="h-3.5 w-3.5" />
+        </button>
+      </header>
+      {loading ? (
+        <div className="pt-4">
+          <SkeletonList rows={3} />
+        </div>
+      ) : items.length === 0 ? (
+        <p className="py-8 text-center text-sm text-graphite-500">
+          What PRIVIA does for you will show up here, step by step.
+        </p>
+      ) : (
+        <ol className="relative pt-4">
+          {items.map((item, index) => (
+            <li key={item.id} className="relative flex gap-4 pb-6 last:pb-1">
+              {index < items.length - 1 ? (
+                <span
+                  className="absolute left-[19px] top-11 h-[calc(100%-2.25rem)] w-px bg-white/[0.08]"
+                  aria-hidden
+                />
+              ) : null}
+              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-graphite-800">
+                <Icon
+                  name={KIND_ICON[item.kind]}
+                  className={`h-[18px] w-[18px] ${item.failed ? 'text-danger' : 'text-graphite-200'}`}
+                />
+                {item.pending ? (
+                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-caution ring-2 ring-graphite-850" />
+                ) : null}
+              </span>
+              <span className="min-w-0 pt-0.5">
+                <span className="block text-sm font-medium leading-snug text-graphite-100">
+                  {item.text}
+                </span>
+                <span className="mt-1 block text-xs text-graphite-500">
+                  {formatRelative(item.when)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </aside>
   );
 }
 
 function Panel({
   title,
   action,
+  onAction,
   children,
 }: {
   title: string;
-  action: { label: string; screen: Screen };
+  action: string;
+  onAction: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <section className="panel p-4">
-      <header className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-graphite-100">{title}</h3>
+    <section className="rounded-2xl border border-white/[0.07] bg-graphite-850/70 p-5">
+      <header className="mb-3 flex items-center justify-between">
+        <h3 className="text-[0.95rem] font-semibold text-white">{title}</h3>
         <button
           type="button"
-          onClick={() => navigate(action.screen)}
-          className="text-xs text-graphite-500 hover:text-graphite-200"
+          onClick={onAction}
+          className="text-xs text-graphite-400 hover:text-white"
         >
-          {action.label}
+          {action}
         </button>
       </header>
       {children}
@@ -319,5 +424,5 @@ function Panel({
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="px-2 py-6 text-center text-xs text-graphite-500">{text}</p>;
+  return <p className="px-2 py-6 text-center text-sm text-graphite-500">{text}</p>;
 }

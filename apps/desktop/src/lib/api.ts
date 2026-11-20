@@ -16,6 +16,7 @@ import type {
   FileEntry,
   MemoryRecord,
   ModelsResponse,
+  PendingApproval,
   Note,
   Preferences,
   PrivacyState,
@@ -179,6 +180,8 @@ export const api = {
   models: () => get<ModelsResponse>('/api/v1/models'),
   setLocalModel: (model: string) =>
     put<{ local: ModelsResponse['local'] }>('/api/v1/models/local', { model }),
+
+  approvals: () => get<{ count: number; approvals: PendingApproval[] }>('/api/v1/approvals'),
 
   preferences: () => get<Preferences>('/api/v1/preferences'),
   setPreferences: (patch: Partial<Preferences>) => put<Preferences>('/api/v1/preferences', patch),

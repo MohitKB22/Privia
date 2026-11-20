@@ -6,7 +6,6 @@ import type { Preferences } from './types';
 
 export const DEFAULT_PREFERENCES: Preferences = {
   onboarding_completed: false,
-  display_name: '',
   start_screen: 'home',
   sidebar_collapsed: false,
   reduce_motion: false,

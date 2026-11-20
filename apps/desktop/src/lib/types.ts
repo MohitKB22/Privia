@@ -269,7 +269,6 @@ export interface ModelsResponse {
 
 export interface Preferences {
   onboarding_completed: boolean;
-  display_name: string;
   start_screen: 'home' | 'workspace';
   sidebar_collapsed: boolean;
   reduce_motion: boolean;
@@ -305,3 +304,15 @@ export type StreamEvent =
       tool_results: ToolResult[];
       permission_prompt: PermissionPrompt | null;
     };
+
+export interface PendingApproval {
+  id: string;
+  session_id: string;
+  tool_name: string;
+  title: string;
+  summary: string;
+  risk_level: RiskLevel;
+  created_at: string;
+  expires_at: string;
+  confirmation: ConfirmationRequest;
+}

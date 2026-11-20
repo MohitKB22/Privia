@@ -399,6 +399,17 @@ class ConfirmationRepository(BaseRepository):
             row["payload"] = json_loads(row["payload_json"], {})
         return row
 
+    def pending(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Unanswered, unexpired confirmations, newest first."""
+        rows = self.db.fetch_all(
+            "SELECT * FROM confirmations WHERE resolved = 0 AND expires_at >= :now "
+            "ORDER BY created_at DESC LIMIT :limit",
+            {"now": utcnow().isoformat(), "limit": limit},
+        )
+        for row in rows:
+            row["payload"] = json_loads(row["payload_json"], {})
+        return rows
+
     def resolve(self, confirmation_id: str, approved: bool) -> None:
         self.db.execute(
             "UPDATE confirmations SET resolved = 1, approved = :a, resolved_at = :now "
